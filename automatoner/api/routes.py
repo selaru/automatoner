@@ -231,12 +231,12 @@ def create_job(body: JobIn) -> dict[str, Any]:
 
 @router.get("/jobs")
 def list_jobs() -> list[dict[str, Any]]:
-    return db.list_("jobs")
+    return runner.list_jobs()
 
 
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, Any]:
-    j = db.get("jobs", job_id)
+    j = runner.refresh(job_id)
     if j is None:
         raise HTTPException(404, "unknown job")
     return {**j, "series": runner.series(job_id), "manifest": runner.manifest(job_id)}

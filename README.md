@@ -71,6 +71,7 @@ Add `--extra dev` if you want to run the tests. A plain `uv run <command>` also 
 | `mlx` | mlx-lm (Apple Silicon only) | fastest LoRA on a Mac |
 | `speech` | cactus-needle | Needle 3 and Whistle |
 | `coreml` | coremltools (macOS) | Core ML export |
+| `mcp` | MCP SDK | letting AI agents use Automatoner (see below) |
 
 On macOS, LightGBM also needs OpenMP: `brew install libomp`. The Doctor checks for it.
 
@@ -95,6 +96,80 @@ Keys are stored on this computer only, in the data folder, readable by your user
 3. **Train.** One subprocess per job, live log and loss curve, cancel kills the whole process tree.
 4. **Export.** Only targets that fit the model and this computer are offered, with the reason when one is not.
 5. **Recipes.** One-click pipelines for common small jobs: rhythm watcher, ALB error mix, IAM whisperer, drift sniffer, cost hunter, WAF classifier, and voice command to tool call.
+
+## Command line
+
+Everything the web interface does is also a command, for scripts, CI and remote machines. Add `--json` to any list or show command for machine-readable output. Exit code 0 is success, 1 a failure, 2 a usage mistake.
+
+```
+automatoner doctor                         # what is installed, what is missing
+automatoner categories                     # what you can train for
+automatoner models --category tabular_anomaly
+automatoner download minilm-l6             # models download only when you ask
+
+automatoner datasets generate --category tabular_anomaly --name "checkout" --spec spec.json
+automatoner datasets add data.csv --category tabular_classification --name "events" --label-column label
+automatoner datasets list
+automatoner datasets show ds-20261027-101500-ab12cd
+
+automatoner train --model isolation_forest --dataset ds-... --config '{"n_estimators": 200}'
+automatoner train --model isolation_forest --dataset ds-... --no-wait   # prints the job id and returns
+automatoner jobs list
+automatoner jobs show job-... --log-lines 20
+automatoner jobs log job-... --follow
+automatoner jobs cancel job-...
+
+automatoner export --job job-... --list                      # exports that fit this job, and why others do not
+automatoner export --job job-... --exporter lambda_zip --options '{"function_name": "scorer"}'
+
+automatoner recipes list
+automatoner recipes run rhythm-watcher     # data, model, training and export in one go
+```
+
+`--spec` takes the same JSON the Datasets page uses (a simulator spec for tabular data, `{"labels": [...], "per_label": 100}` for text classification, `{"tools": [...], "total": 200}` for tool calling). For tabular data you can instead write `--describe "Lambda behind an ALB for a web shop ..."` and let an LLM design the simulator (needs a provider key in Settings, or Ollama). Training and generation progress prints to the terminal's error stream, so `--json` output stays clean on stdout. A job keeps running if you close the terminal; check it later with `jobs show`.
+
+## Use it from AI agents (MCP)
+
+Automatoner can act as an [MCP](https://modelcontextprotocol.io) server, so an agent in Claude Code, Claude Desktop, Cursor or another MCP host can run the whole loop: check the setup, pick a model, make a dataset, train, read the scores and export.
+
+Install the extra, then register the server. Point the host at the `automatoner` program inside this project's virtual environment. Do not use `uv run` here: it re-syncs the environment and can remove extras (see "Installing extras").
+
+```
+automatoner doctor --install mcp
+
+# Claude Code (macOS and Linux)
+claude mcp add automatoner -- /path/to/automatoner/.venv/bin/automatoner mcp
+# Windows: C:\path\to\automatoner\.venv\Scripts\automatoner.exe
+```
+
+For hosts configured with a JSON file (Claude Desktop, Cursor and similar):
+
+```json
+{
+  "mcpServers": {
+    "automatoner": {
+      "command": "/path/to/automatoner/.venv/bin/automatoner",
+      "args": ["mcp", "--allow-dir", "/path/to/your/data"]
+    }
+  }
+}
+```
+
+**Tools.** Read: `get_limits`, `doctor`, `list_categories`, `list_models`, `list_datasets`, `get_dataset`, `list_recipes`, `list_jobs`, `get_job`, `list_exports`, `get_task`, `get_export`. Act: `download_model`, `add_dataset_from_file`, `generate_dataset`, `start_training`, `cancel_job`, `start_export`, `run_recipe`. Downloads, data generation and exports return a task id to poll with `get_task`; training returns a job id to poll with `get_job`. Errors come back as plain messages the agent can act on.
+
+**Safe by default.** An agent can spend your time, disk and money, so the server restricts it:
+
+| Rule | Default | Change with |
+|---|---|---|
+| Write tools | on | `--read-only` removes them entirely |
+| Importing files | only from `~/.automatoner/inbox` (symlinks and `..` are resolved and checked) | `--allow-dir FOLDER`, repeatable |
+| Data written by paid LLM providers | off (the tabular simulator needs no LLM and is always allowed) | `--allow-llm` |
+| Training jobs per session | 5 | `--max-jobs N` |
+| Jobs running at once | 2 | `--max-running N` |
+| Largest synthetic dataset | 5000 examples | `--max-examples N` |
+| Largest model download | 5000 MB | `--max-download-mb N` |
+
+Stored API keys and tokens are never returned by any tool, and settings cannot be read or changed through MCP. Anything the agent runs still uses your computer and any provider key you have saved, so review the limits before enabling `--allow-llm`. A good first prompt: "Use automatoner to train an anomaly detector on the CSV in my inbox and export it for AWS Lambda."
 
 ## What works with what
 
@@ -122,7 +197,7 @@ Listed in the catalogue but not trainable yet: GLiNER, Moonshine, Whisper, Parak
 ```
 cd web && npm install && npm run dev      # UI with hot reload, proxies to the server on 8765
 cd web && npm run build                   # writes automatoner/web/dist, which is committed
-uv run pytest                             # ~35 s, tabular only
+uv run --extra mcp pytest                 # ~45 s: tabular, CLI and MCP
 AUTOMATONER_SLOW=1 uv run pytest tests/test_slow_real_models.py -s   # real downloads and training, ~3 min
 ```
 

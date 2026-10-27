@@ -14,6 +14,6 @@ jobs:
       - name: OpenMP for LightGBM on macOS
         if: runner.os == 'macOS'
         run: brew install libomp
-      - run: uv sync --extra tabular --extra dev
+      - run: uv sync --extra tabular --extra mcp --extra dev
       # Heavy trainers (text, mlx, speech) are covered by tests/test_slow_real_models.py, which is opt-in (AUTOMATONER_SLOW=1).
       - run: uv run pytest -q --ignore=tests/test_slow_real_models.py

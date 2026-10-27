@@ -102,14 +102,25 @@ def _launch(job_id: str) -> None:
     threading.Thread(target=_monitor, args=(job_id, proc), daemon=True, name=f"job-{job_id}").start()
 
 
-def _monitor(job_id: str, proc: subprocess.Popen) -> None:
-    code = proc.wait()
+def _worker_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        return p.is_running() and p.status() != psutil.STATUS_ZOMBIE and any("automatoner.training.worker" in part for part in p.cmdline())
+    except Exception:  # noqa: BLE001 - gone, or not ours
+        return False
+
+
+def _finalize(job_id: str, code: int | None = None) -> dict[str, Any] | None:
+    """Record how a finished worker ended. Safe to call from any process, and more than once."""
     jd = job_dir(job_id)
-    cur = db.get("jobs", job_id) or {}
-    if cur.get("status") == "cancelled":
-        db.update("jobs", job_id, finished=util.now_iso())
-        return
-    status = {"status": "error", "error": f"worker exited with code {code}"}
+    cur = db.get("jobs", job_id)
+    if cur is None or cur.get("status") in ("done", "error", "cancelled", "interrupted"):
+        return cur
+    status: dict[str, Any] = {"status": "interrupted", "error": "the worker stopped without reporting a result"} if code is None else \
+        {"status": "error", "error": f"worker exited with code {code}"}
     sf = jd / "status.json"
     if sf.exists():
         status = json.loads(sf.read_text(encoding="utf-8"))
@@ -118,20 +129,43 @@ def _monitor(job_id: str, proc: subprocess.Popen) -> None:
     if status["status"] == "done" and mf.exists():
         m = json.loads(mf.read_text(encoding="utf-8"))
         summary = {"metrics": m.get("metrics"), "size_bytes": m.get("size_bytes"), "artifacts": list((m.get("artifacts") or {}).keys())}
-    db.update("jobs", job_id, status=status["status"], error=status.get("error"), finished=util.now_iso(), summary=summary)
+    return db.update("jobs", job_id, status=status["status"], error=status.get("error"), finished=util.now_iso(), summary=summary)
+
+
+def _monitor(job_id: str, proc: subprocess.Popen) -> None:
+    code = proc.wait()
+    cur = db.get("jobs", job_id) or {}
+    if cur.get("status") == "cancelled":
+        db.update("jobs", job_id, finished=util.now_iso())
+    else:
+        _finalize(job_id, code)
     with _lock:
         _procs.pop(job_id, None)
+
+
+def refresh(job_id: str) -> dict[str, Any] | None:
+    """The job record, brought up to date. A job whose worker has ended is finalized even if the process that started it is gone."""
+    doc = db.get("jobs", job_id)
+    if doc and doc.get("status") in ("queued", "running") and job_id not in _procs and not _worker_alive(doc.get("pid")):
+        return _finalize(job_id)
+    return doc
+
+
+def list_jobs() -> list[dict[str, Any]]:
+    return [refresh(j["id"]) or j for j in db.list_("jobs")]
 
 
 def cancel(job_id: str) -> bool:
     with _lock:
         proc = _procs.get(job_id)
-    if proc is None or proc.poll() is not None:
+    doc = db.get("jobs", job_id) or {}
+    pid = proc.pid if proc is not None and proc.poll() is None else (doc.get("pid") if _worker_alive(doc.get("pid")) else None)
+    if pid is None:
         return False
     db.update("jobs", job_id, status="cancelled")
     try:
         import psutil
-        parent = psutil.Process(proc.pid)
+        parent = psutil.Process(pid)
         kids = parent.children(recursive=True)
         for p in kids + [parent]:
             try:
@@ -143,15 +177,16 @@ def cancel(job_id: str) -> bool:
             if p.is_running():
                 p.kill()
     except Exception:  # noqa: BLE001
-        proc.kill()
+        if proc is not None:
+            proc.kill()
     return True
 
 
 def mark_interrupted() -> None:
-    """On startup: jobs left 'running' by a previous server process did not survive it."""
+    """On startup, settle jobs left running. Jobs whose worker is still alive (started by another process) are left alone."""
     for j in db.list_("jobs"):
         if j["status"] in ("running", "queued"):
-            db.update("jobs", j["id"], status="interrupted", finished=util.now_iso())
+            refresh(j["id"])
 
 
 def read_log(job_id: str, offset: int = 0) -> tuple[str, int]:
