@@ -25,7 +25,12 @@ class LightGBMPlugin:
                 field_("seed", "Random seed", "int", 42, advanced=True)]
 
     def run(self, ctx: TrainContext) -> dict[str, Any]:
-        import lightgbm as lgb
+        try:
+            import lightgbm as lgb
+        except OSError as e:
+            if "libomp" in str(e):
+                raise RuntimeError("LightGBM needs the OpenMP library on macOS. Run: brew install libomp") from e
+            raise
         import onnxmltools
         from onnxmltools.convert.common.data_types import FloatTensorType
 

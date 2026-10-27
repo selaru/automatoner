@@ -72,6 +72,8 @@ Add `--extra dev` if you want to run the tests. A plain `uv run <command>` also 
 | `speech` | cactus-needle | Needle 3 and Whistle |
 | `coreml` | coremltools (macOS) | Core ML export |
 
+On macOS, LightGBM also needs OpenMP: `brew install libomp`. The Doctor checks for it.
+
 ### Reading the Doctor
 
 `ok` means ready. `!` is a warning and is usually optional (Ollama not running, Docker daemon off, no token). `+` is an optional part that is not installed, with a fix. `-` is something you have not configured and may not need. Only a red problem blocks you.

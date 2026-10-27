@@ -67,8 +67,9 @@ def disk_check() -> dict[str, Any]:
 
 def ram_check() -> dict[str, Any]:
     gb = psutil.virtual_memory().total / 2**30
-    st = "ok" if gb >= 16 else "warn" if gb >= 8 else "fail"
-    return _c("ram", "Memory", st, f"{gb:.0f} GB. Training a 0.6B model with LoRA needs about 6 to 8 GB; 1.7B needs 16 GB or more.")
+    # Low memory is a warning, never a failure: tabular models and small encoders train fine on 4 GB.
+    st = "ok" if gb >= 16 else "warn"
+    return _c("ram", "Memory", st, f"{gb:.0f} GB. Tabular models need little. Training a 0.6B language model with LoRA needs about 6 to 8 GB; 1.7B needs 16 GB or more.")
 
 
 def accelerator_check() -> dict[str, Any]:
@@ -97,6 +98,17 @@ def extra_checks() -> list[dict[str, Any]]:
             out.append(_c(f"extra-{key}", e["name"], "missing", f"{e['why']} Missing: {', '.join(missing)}.",
                           {"type": "extra", "extra": key, "label": f"Install '{key}'"}, group="python"))
     return out
+
+
+def libomp_check() -> dict[str, Any] | None:
+    """LightGBM on macOS needs Homebrew's libomp; without it importing lightgbm fails."""
+    if sys.platform != "darwin" or importlib.util.find_spec("lightgbm") is None:
+        return None
+    code, out = _run([sys.executable, "-c", "import lightgbm"], timeout=60)
+    if code == 0:
+        return _c("libomp", "libomp (LightGBM on macOS)", "ok", "LightGBM loads", group="tools")
+    return _c("libomp", "libomp (LightGBM on macOS)", "warn", "LightGBM is installed but cannot load. It needs OpenMP: brew install libomp",
+              {"type": "command", "command": "brew install libomp", "label": "Install libomp"}, group="tools")
 
 
 def needle_cli_check() -> dict[str, Any] | None:
@@ -205,6 +217,9 @@ def run_all() -> list[dict[str, Any]]:
     for c in (needle_cli_check(),):
         if c:
             checks.append(c)
+    c = libomp_check()
+    if c:
+        checks.append(c)
     checks += [git_check(), ollama_check(), docker_check(), ffmpeg_check(), llamacpp_check()]
     c = coreai_check()
     if c:
