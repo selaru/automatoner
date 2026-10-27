@@ -1,0 +1,25 @@
+id: cost-hunter
+name: Cost hunter judge
+blurb: Rules find candidate resources; this small model judges whether each one is really idle.
+source: "Deck slides 4, 5 and 11"
+category: tabular_classification
+model: lightgbm
+trainer: lightgbm
+dataset:
+  name: Idle resources demo data
+  spec:
+    rows: 12000
+    anomaly_rate: 0.15
+    seed: 8
+    label_column: label
+    label_names: [in_use, idle]
+    columns:
+      - {name: resource_type, kind: category, values: [ebs_volume, elastic_ip, snapshot, load_balancer, nat_gateway], probs: [0.4, 0.1, 0.3, 0.1, 0.1], anomaly: {probs: [0.45, 0.2, 0.2, 0.1, 0.05]}}
+      - {name: days_detached, kind: poisson, lam: 2, anomaly: {mult: 20}}
+      - {name: days_since_last_traffic, kind: poisson, lam: 1, anomaly: {mult: 25}}
+      - {name: monthly_cost_usd, kind: lognormal, mean_log: 3.2, sigma: 0.8}
+      - {name: has_owner_tag, kind: category, values: ["1", "0"], probs: [0.9, 0.1], anomaly: {probs: [0.2, 0.8]}}
+train: {n_estimators: 120, num_leaves: 15}
+export:
+  exporter: lambda_zip
+  options: {function_name: cost-hunter-judge, memory: 256}

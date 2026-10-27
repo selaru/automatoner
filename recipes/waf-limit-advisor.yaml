@@ -1,0 +1,25 @@
+id: waf-limit-advisor
+name: WAF bot-versus-shopper classifier
+blurb: Separates bots from busy shoppers per IP so rate limits can follow real traffic. Percentiles do the rest.
+source: "Deck slide 10"
+category: tabular_classification
+model: logistic_regression
+trainer: sklearn
+dataset:
+  name: WAF per-IP demo data
+  spec:
+    rows: 15000
+    anomaly_rate: 0.08
+    seed: 3
+    label_column: label
+    label_names: [shopper, bot]
+    columns:
+      - {name: requests_per_min, kind: lognormal, mean_log: 1.6, sigma: 0.6, anomaly: {mult: 9}}
+      - {name: distinct_paths, kind: poisson, lam: 9, anomaly: {mult: 5}}
+      - {name: share_4xx, kind: normal, mean: 0.04, std: 0.03, min: 0, max: 1, anomaly: {shift_std: 6}}
+      - {name: avg_interarrival_s, kind: lognormal, mean_log: 2.3, sigma: 0.7, anomaly: {mult: 0.05}}
+      - {name: known_user_agent, kind: category, values: ["1", "0"], probs: [0.96, 0.04], anomaly: {probs: [0.35, 0.65]}}
+train: {C: 1.0, balanced: true}
+export:
+  exporter: joblib
+  options: {}

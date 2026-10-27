@@ -1,0 +1,376 @@
+# Model catalogue. Add a model by adding an entry; no code change needed.
+#
+# categories: what a model can be trained for. `trainers` maps each category to the training plugin.
+# A model with no trainer for a category is listed as "planned" in the UI (downloadable, not yet trainable).
+# source: builtin  -> an algorithm shipped with the tool, nothing to download.
+# source: hf       -> Hugging Face repo, downloaded only when the user clicks Download.
+
+categories:
+  - id: tabular_anomaly
+    name: Tabular anomaly detection
+    blurb: Score how unusual a row or a time window is. Rhythm watcher, ALB error mix.
+    dataset: "CSV or Parquet with numeric columns. An optional 0/1 label column enables evaluation."
+  - id: tabular_classification
+    name: Tabular classification
+    blurb: Label an event, for example normal or strange. IAM whisperer, cost hunter judge.
+    dataset: "CSV or Parquet with feature columns and a label column."
+  - id: text_classification
+    name: Text classification
+    blurb: Route or label short text, log lines, config diffs. Drift sniffer.
+    dataset: "CSV or JSONL with `text` and `label` columns."
+  - id: extraction
+    name: Entity and field extraction
+    blurb: Pull typed fields out of messy text.
+    dataset: "JSONL records of text plus the fields to extract."
+  - id: tool_calling
+    name: Tool calling
+    blurb: Map a request to function calls with arguments.
+    dataset: "JSONL with `query`, `tools`, `answers` (Needle format) or chat messages with tools."
+  - id: text_to_json
+    name: Text to JSON (generative)
+    blurb: Turn free text into a fixed JSON record with generated fields, in the input's language.
+    dataset: "Chat JSONL: system, user, assistant messages."
+  - id: speech
+    name: Speech to text
+    blurb: Transcribe, add a language, bias toward your vocabulary.
+    dataset: "JSONL with `audio` path, `text` transcript and `language`."
+  - id: embeddings
+    name: Embeddings
+    blurb: Vectors for search, matching, deduplication.
+    dataset: "Pairs or triplets of text."
+  - id: vision
+    name: Vision
+    blurb: Classify images or read fields from screenshots.
+    dataset: "Folder of images with labels."
+
+models:
+  # ---- builtin algorithms ------------------------------------------------------------------
+  - id: isolation_forest
+    name: Isolation Forest
+    source: builtin
+    categories: [tabular_anomaly]
+    params: "n/a"
+    size_mb: 1
+    license: BSD-3-Clause
+    trainers: {tabular_anomaly: sklearn}
+    defaults: {algorithm: isolation_forest}
+    good_for: Fast unsupervised anomaly scores on a handful of numeric features. Under 1 MB.
+    runs_on: [lambda, container, browser, python]
+  - id: one_class_svm
+    name: One-Class SVM
+    source: builtin
+    categories: [tabular_anomaly]
+    params: "n/a"
+    size_mb: 1
+    license: BSD-3-Clause
+    trainers: {tabular_anomaly: sklearn}
+    defaults: {algorithm: one_class_svm}
+    good_for: Smooth boundary around normal behaviour. Best on small, well-scaled data.
+    runs_on: [lambda, container, browser, python]
+  - id: autoencoder
+    name: Tiny autoencoder
+    source: builtin
+    categories: [tabular_anomaly]
+    params: "~10K"
+    size_mb: 1
+    license: MIT
+    trainers: {tabular_anomaly: torch_tiny}
+    defaults: {algorithm: autoencoder}
+    good_for: Reconstruction error as anomaly score. Handles correlated features. Needs the text extra.
+    runs_on: [lambda, container, browser, python, coreml]
+  - id: lightgbm
+    name: LightGBM
+    source: builtin
+    categories: [tabular_classification]
+    params: "n/a"
+    size_mb: 2
+    license: MIT
+    trainers: {tabular_classification: lightgbm}
+    defaults: {algorithm: lightgbm}
+    good_for: Gradient-boosted trees. Strong default for mixed numeric and categorical event features.
+    runs_on: [lambda, container, browser, python]
+  - id: random_forest
+    name: Random Forest
+    source: builtin
+    categories: [tabular_classification]
+    params: "n/a"
+    size_mb: 5
+    license: BSD-3-Clause
+    trainers: {tabular_classification: sklearn}
+    defaults: {algorithm: random_forest}
+    good_for: Robust, little tuning. Larger files than boosted trees.
+    runs_on: [lambda, container, browser, python]
+  - id: logistic_regression
+    name: Logistic regression
+    source: builtin
+    categories: [tabular_classification]
+    params: "n/a"
+    size_mb: 1
+    license: BSD-3-Clause
+    trainers: {tabular_classification: sklearn}
+    defaults: {algorithm: logistic_regression}
+    good_for: Linear baseline. Always train this first to see whether a bigger model is needed.
+    runs_on: [lambda, container, browser, python]
+
+  # ---- Hugging Face encoders and small LMs ----------------------------------------------------
+  - id: modernbert-base
+    name: ModernBERT base
+    source: hf
+    repo: answerdotai/ModernBERT-base
+    categories: [text_classification]
+    params: 150M
+    size_mb: 600
+    license: apache-2.0
+    trainers: {text_classification: hf_text}
+    defaults: {mode: classification}
+    good_for: Encoder for fine-tuned classification. 8K context. Config diffs and long log lines.
+    runs_on: [lambda, container, browser, python]
+  - id: minilm-l6
+    name: all-MiniLM-L6-v2
+    source: hf
+    repo: sentence-transformers/all-MiniLM-L6-v2
+    categories: [text_classification, embeddings]
+    params: 23M
+    size_mb: 90
+    license: apache-2.0
+    trainers: {text_classification: hf_text}
+    defaults: {mode: classification}
+    good_for: Smallest sensible text classifier. Runs in a Lambda with room to spare.
+    runs_on: [lambda, container, browser, python]
+  - id: bge-small-en
+    name: bge-small-en-v1.5
+    source: hf
+    repo: BAAI/bge-small-en-v1.5
+    categories: [text_classification, embeddings]
+    params: 33M
+    size_mb: 130
+    license: mit
+    trainers: {text_classification: hf_text}
+    defaults: {mode: classification}
+    good_for: Stronger small encoder for classification. Also a leading small embedding model.
+    runs_on: [lambda, container, browser, python]
+  - id: smollm2-135m
+    name: SmolLM2 135M Instruct
+    source: hf
+    repo: HuggingFaceTB/SmolLM2-135M-Instruct
+    categories: [text_to_json, tool_calling, text_classification]
+    params: 135M
+    size_mb: 270
+    license: apache-2.0
+    trainers: {text_to_json: hf_text, tool_calling: hf_text, text_classification: hf_text}
+    defaults: {mode: causal_lm}
+    good_for: Smallest instruct LM. Narrow JSON tasks in English. Trains on a laptop CPU.
+    runs_on: [container, python, gguf]
+  - id: smollm2-360m
+    name: SmolLM2 360M Instruct
+    source: hf
+    repo: HuggingFaceTB/SmolLM2-360M-Instruct
+    categories: [text_to_json, tool_calling, text_classification]
+    params: 360M
+    size_mb: 720
+    license: apache-2.0
+    trainers: {text_to_json: [mlx_lm, hf_text], tool_calling: hf_text, text_classification: hf_text}
+    defaults: {mode: causal_lm}
+    good_for: Good size and quality balance for English structured output.
+    runs_on: [container, python, gguf]
+  - id: qwen3-0.6b
+    name: Qwen3 0.6B
+    source: hf
+    repo: Qwen/Qwen3-0.6B
+    categories: [text_to_json, tool_calling, text_classification]
+    params: 0.75B
+    size_mb: 1500
+    license: apache-2.0
+    trainers: {text_to_json: [mlx_lm, hf_text], tool_calling: hf_text, text_classification: hf_text}
+    defaults: {mode: causal_lm}
+    coreai_recipe: qwen3-0.6b
+    good_for: Multilingual. Apple's Core AI recipe supports it, so it reaches iPhones.
+    runs_on: [container, python, gguf, coreai]
+  - id: qwen3-1.7b
+    name: Qwen3 1.7B
+    source: hf
+    repo: Qwen/Qwen3-1.7B
+    categories: [text_to_json, tool_calling]
+    params: 2.0B
+    size_mb: 4100
+    license: apache-2.0
+    trainers: {text_to_json: [mlx_lm, hf_text], tool_calling: hf_text}
+    defaults: {mode: causal_lm}
+    good_for: Next rung up when 0.6B garbles non-English output. Needs 16 GB RAM or more to train.
+    runs_on: [container, python, gguf]
+  - id: qwen3.5-0.8b
+    name: Qwen3.5 0.8B
+    source: hf
+    repo: Qwen/Qwen3.5-0.8B
+    categories: [text_to_json, tool_calling]
+    params: 0.87B
+    size_mb: 1750
+    license: apache-2.0
+    trainers: {text_to_json: mlx_lm, tool_calling: null}
+    defaults: {mode: causal_lm}
+    notes: Multimodal architecture. Text-only fine-tuning works through mlx-lm; Transformers support varies by version.
+    good_for: Better base quality than Qwen3 0.6B at a larger bundle size.
+    runs_on: [container, python]
+  - id: lfm2-700m
+    name: LiquidAI LFM2 700M
+    source: hf
+    repo: LiquidAI/LFM2-700M
+    categories: [text_to_json, tool_calling]
+    params: 0.74B
+    size_mb: 1500
+    license: other
+    trainers: {text_to_json: [mlx_lm, hf_text], tool_calling: hf_text}
+    defaults: {mode: causal_lm}
+    notes: LFM Open License, check the terms before shipping commercially.
+    good_for: Strong for its size and built for edge devices.
+    runs_on: [container, python]
+  - id: gemma-3-1b
+    name: Gemma 3 1B Instruct
+    source: hf
+    repo: google/gemma-3-1b-it
+    categories: [text_to_json, tool_calling]
+    params: 1.0B
+    size_mb: 2000
+    license: gemma
+    gated: true
+    trainers: {text_to_json: [mlx_lm, hf_text], tool_calling: hf_text}
+    defaults: {mode: causal_lm}
+    notes: Gated. Accept the licence on Hugging Face and set a token in Settings.
+    good_for: Good multilingual quality at 1B.
+    runs_on: [container, python, gguf]
+
+  # ---- extraction ------------------------------------------------------------------------------
+  - id: gliner-small
+    name: GLiNER small v2.1
+    source: hf
+    repo: urchade/gliner_small-v2.1
+    categories: [extraction]
+    params: "~170M"
+    size_mb: 600
+    license: apache-2.0
+    trainers: {extraction: null}
+    good_for: Zero-shot entity extraction on CPU. Fine-tuning through the GLiNER library is planned.
+    runs_on: [container, python]
+  - id: gliner2-base
+    name: GLiNER2 base
+    source: hf
+    repo: fastino/gliner2-base-v1
+    categories: [extraction, text_classification]
+    params: 208M
+    size_mb: 830
+    license: apache-2.0
+    trainers: {extraction: null, text_classification: null}
+    good_for: Entities, classification and JSON extraction in one 200M model. Training planned.
+    runs_on: [container, python]
+
+  # ---- Cactus Needle and Whistle ----------------------------------------------------------------
+  - id: needle3
+    name: Needle 3
+    source: hf
+    repo: Cactus-Compute/needle3
+    categories: [tool_calling, extraction, embeddings]
+    params: "121M (acts like 50M)"
+    size_mb: 285
+    allow_patterns: ["checkpoints/*", "tokenizer/*", "config.json", "needle3.cact", "README.md", "LICENSE"]
+    download_note: "Training checkpoint (242 MB) and the 35 MB deploy file. The per-platform engines are fetched when you export."
+    license: apache-2.0
+    trainers: {tool_calling: needle, extraction: needle}
+    defaults: {layers: 8}
+    good_for: 8 to 29 MB model for tool calls and structured extraction. Any depth from 2 to 20 layers.
+    runs_on: [needle-engine, container, browser, mobile]
+  - id: whistle
+    name: Whistle
+    source: hf
+    repo: Cactus-Compute/whistle
+    categories: [speech]
+    params: "17 MB file"
+    size_mb: 240
+    allow_patterns: ["checkpoints/*", "config.json", "whistle.cact", "README.md", "LICENSE"]
+    license: apache-2.0
+    trainers: {speech: whistle}
+    defaults: {}
+    good_for: 16.9 MB speech to text in seven languages. Train a new language or your vocabulary.
+    runs_on: [needle-engine, container, browser, mobile]
+
+  # ---- speech --------------------------------------------------------------------------------
+  - id: moonshine-tiny
+    name: Moonshine tiny
+    source: hf
+    repo: moonshine-ai/moonshine-tiny
+    categories: [speech]
+    params: 27M
+    size_mb: 110
+    license: mit
+    trainers: {speech: null}
+    notes: Official fine-tuning is a paid service. A community toolkit exists and is planned as an experimental trainer.
+    good_for: Fast English streaming ASR for phones and browsers.
+    runs_on: [container, python, browser]
+  - id: moonshine-base
+    name: Moonshine base
+    source: hf
+    repo: moonshine-ai/moonshine-base
+    categories: [speech]
+    params: 62M
+    size_mb: 250
+    license: mit
+    trainers: {speech: null}
+    good_for: More accurate English ASR, still small.
+    runs_on: [container, python, browser]
+  - id: whisper-tiny
+    name: Whisper tiny
+    source: hf
+    repo: openai/whisper-tiny
+    categories: [speech]
+    params: 38M
+    size_mb: 150
+    license: apache-2.0
+    trainers: {speech: null}
+    good_for: Broadest language coverage at this size. Whisper fine-tuning is planned.
+    runs_on: [container, python]
+  - id: whisper-base
+    name: Whisper base
+    source: hf
+    repo: openai/whisper-base
+    categories: [speech]
+    params: 73M
+    size_mb: 290
+    license: apache-2.0
+    trainers: {speech: null}
+    good_for: Better accuracy than tiny, same ecosystem.
+    runs_on: [container, python]
+  - id: parakeet-110m
+    name: Parakeet TDT-CTC 110M
+    source: hf
+    repo: nvidia/parakeet-tdt_ctc-110m
+    categories: [speech]
+    params: 110M
+    size_mb: 450
+    license: cc-by-4.0
+    trainers: {speech: null}
+    notes: NeMo is Linux and CUDA only. Download for use as-is; train on a CUDA machine with NeMo.
+    good_for: Strong English accuracy for its size.
+    runs_on: [container, python]
+
+  # ---- vision (phase 2) ----------------------------------------------------------------------
+  - id: smolvlm-256m
+    name: SmolVLM 256M Instruct
+    source: hf
+    repo: HuggingFaceTB/SmolVLM-256M-Instruct
+    categories: [vision]
+    params: 256M
+    size_mb: 520
+    license: apache-2.0
+    trainers: {vision: null}
+    good_for: Tiny vision-language model for screenshots and charts. Training planned.
+    runs_on: [container, python, browser]
+  - id: smolvlm-500m
+    name: SmolVLM 500M Instruct
+    source: hf
+    repo: HuggingFaceTB/SmolVLM-500M-Instruct
+    categories: [vision]
+    params: 507M
+    size_mb: 1000
+    license: apache-2.0
+    trainers: {vision: null}
+    good_for: Better quality than 256M. Training planned.
+    runs_on: [container, python]

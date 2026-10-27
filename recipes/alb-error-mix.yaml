@@ -1,0 +1,23 @@
+id: alb-error-mix
+name: ALB error-mix scorer
+blurb: Scores each ALB log file against the service's normal share of 4xx and 5xx responses.
+source: "Deck slide 8"
+category: tabular_anomaly
+model: one_class_svm
+trainer: sklearn
+dataset:
+  name: ALB error mix demo data
+  spec:
+    rows: 8000
+    anomaly_rate: 0.03
+    seed: 5
+    label_column: label
+    columns:
+      - {name: requests, kind: lognormal, mean_log: 7.0, sigma: 0.35, anomaly: {mult: 0.3}}
+      - {name: share_4xx, kind: normal, mean: 0.03, std: 0.01, min: 0, max: 1, anomaly: {shift_std: 10}}
+      - {name: share_5xx, kind: normal, mean: 0.004, std: 0.002, min: 0, max: 1, anomaly: {shift_std: 14}}
+      - {name: p95_target_ms, kind: lognormal, mean_log: 5.0, sigma: 0.2, anomaly: {mult: 2.8}}
+train: {nu: 0.03, contamination: 0.03}
+export:
+  exporter: lambda_zip
+  options: {function_name: alb-error-mix, memory: 128}

@@ -1,0 +1,22 @@
+id: drift-sniffer
+name: Drift sniffer
+blurb: Reads a one-line config change and says whether it widened, narrowed or left access unchanged.
+source: "Deck slides 4 and 11"
+category: text_classification
+model: minilm-l6
+trainer: hf_text
+needs_llm: true
+dataset:
+  name: Config drift demo data
+  spec:
+    language: English
+    per_label: 300
+    style: "one-line diffs of AWS security groups, IAM policies, S3 bucket policies and WAF rules, like a changelog entry"
+    labels:
+      - {name: widened, description: "The change grants more access or opens more traffic, for example a wider CIDR, an added wildcard, a new allowed action."}
+      - {name: narrowed, description: "The change removes access or tightens a rule, for example a smaller CIDR, a removed action, a closed port."}
+      - {name: unchanged, description: "A change that does not alter who can do what, for example a tag, a description, a rename."}
+train: {epochs: 3, batch_size: 16, learning_rate: 5.0e-5}
+export:
+  exporter: onnx
+  options: {}

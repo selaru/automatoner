@@ -1,0 +1,27 @@
+id: voice-command-to-tool-call
+name: Voice command to tool call
+blurb: Needle 3 learns your tools from synthetic examples. Pair it with Whistle to go from speech to tool calls on a small device.
+source: "Research: Whistle and Needle"
+category: tool_calling
+model: needle3
+trainer: needle
+needs_llm: true
+dataset:
+  name: Smart home tools demo data
+  spec:
+    total: 400
+    language: English
+    tools:
+      - name: set_light
+        description: Turn a light on or off, or set its brightness.
+        parameters: {type: object, properties: {room: {type: string}, on: {type: boolean}, brightness: {type: integer, description: "0 to 100"}}, required: [room]}
+      - name: set_thermostat
+        description: Set the target temperature in degrees Celsius.
+        parameters: {type: object, properties: {room: {type: string}, celsius: {type: number}}, required: [celsius]}
+      - name: play_music
+        description: Play a playlist or an artist.
+        parameters: {type: object, properties: {query: {type: string}, room: {type: string}}, required: [query]}
+train: {epochs: 10, layers: 8}
+export:
+  exporter: cact
+  options: {platform: macos-arm64}

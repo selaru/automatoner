@@ -1,0 +1,24 @@
+id: rhythm-watcher
+name: Rhythm watcher
+blurb: Scores how unusual this minute is for one service, given its daily rhythm.
+source: "Deck slides 4 and 5"
+category: tabular_anomaly
+model: isolation_forest
+trainer: sklearn
+dataset:
+  name: Rhythm watcher demo data
+  spec:
+    rows: 20000
+    anomaly_rate: 0.02
+    seed: 11
+    label_column: label
+    columns:
+      - {name: hour, kind: uniform_int, low: 0, high: 23}
+      - {name: requests_per_min, kind: seasonal, base: 240, amplitude: 140, period_column: hour, period: 24, noise: 18, min: 0, anomaly: {mult: 3.0}}
+      - {name: error_rate, kind: normal, mean: 0.012, std: 0.005, min: 0, max: 1, anomaly: {shift_std: 9}}
+      - {name: p95_latency_ms, kind: lognormal, mean_log: 4.7, sigma: 0.18, anomaly: {mult: 3.0}}
+      - {name: queue_depth, kind: poisson, lam: 4, anomaly: {mult: 12}}
+train: {n_estimators: 100, contamination: 0.02}
+export:
+  exporter: lambda_zip
+  options: {function_name: rhythm-watcher, memory: 128}

@@ -1,0 +1,25 @@
+id: iam-whisperer
+name: IAM whisperer
+blurb: Flags a CloudTrail event as normal or strange from simple event features.
+source: "Deck slides 4, 5 and 11"
+category: tabular_classification
+model: lightgbm
+trainer: lightgbm
+dataset:
+  name: IAM events demo data
+  spec:
+    rows: 30000
+    anomaly_rate: 0.03
+    seed: 21
+    label_column: label
+    label_names: [normal, strange]
+    columns:
+      - {name: hour, kind: uniform_int, low: 7, high: 19, anomaly: {mult: 0.3}}
+      - {name: event_name, kind: category, values: [GetObject, PutObject, AssumeRole, DescribeInstances, ListBuckets, CreateAccessKey, AttachRolePolicy, PutBucketPolicy], probs: [0.4, 0.2, 0.18, 0.1, 0.09, 0.01, 0.01, 0.01], anomaly: {probs: [0.02, 0.02, 0.1, 0.02, 0.04, 0.3, 0.3, 0.2]}}
+      - {name: source_ip_is_new, kind: category, values: ["0", "1"], probs: [0.97, 0.03], anomaly: {probs: [0.3, 0.7]}}
+      - {name: calls_last_hour, kind: poisson, lam: 9, anomaly: {mult: 8}}
+      - {name: error_share, kind: normal, mean: 0.02, std: 0.015, min: 0, max: 1, anomaly: {shift_std: 8}}
+train: {n_estimators: 150, num_leaves: 15}
+export:
+  exporter: lambda_zip
+  options: {function_name: iam-whisperer, memory: 256}
