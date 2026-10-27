@@ -177,3 +177,10 @@ def test_resume_job_id_is_validated():
     ok = "job-20261027-101500-ab12cd"
     pat = r"job-[0-9]{8}-[0-9]{6}-[0-9a-f]{6}"
     assert re.fullmatch(pat, ok) and not re.fullmatch(pat, "../../etc")
+
+
+def test_low_memory_is_a_warning_not_a_failure(monkeypatch):
+    class Mem:
+        total = 4 * 2**30
+    monkeypatch.setattr(checks.psutil, "virtual_memory", lambda: Mem())
+    assert checks.ram_check()["status"] == "warn"
