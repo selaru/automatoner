@@ -21,6 +21,7 @@ EXTRAS: dict[str, dict[str, Any]] = {
              "why": "Fine-tune text classifiers and small language models, tiny autoencoders."},
     "mlx": {"name": "MLX LM (Apple Silicon)", "modules": ["mlx_lm"], "why": "Fastest LoRA training for 0.5B to 2B models on a Mac.", "platforms": ["darwin-arm64"]},
     "speech": {"name": "Cactus Needle and Whistle", "modules": ["needle"], "why": "Train Needle 3 (tool calls, extraction) and Whistle (speech to text)."},
+    "mcp": {"name": "MCP server for AI agents", "modules": ["mcp"], "why": "Lets Claude Code and other agents run Automatoner (automatoner mcp)."},
     "coreml": {"name": "Core ML tools", "modules": ["coremltools"], "why": "Export to Core ML for iOS and macOS apps.", "platforms": ["darwin"]},
 }
 

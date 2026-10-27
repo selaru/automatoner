@@ -1,4 +1,9 @@
-"""Command line: automatoner serve | doctor | models | train | export"""
+"""Command line: everything the web UI does, for scripts and terminals.
+
+  automatoner serve | doctor | models | download | datasets | train | jobs | export | recipes | mcp
+
+Add --json to list and show commands for machine-readable output. Exit code 0 means success, 1 failure, 2 bad usage.
+"""
 from __future__ import annotations
 
 import argparse
@@ -6,122 +11,336 @@ import json
 import sys
 import time
 import webbrowser
+from typing import Any
+
+from . import ops
 
 
-def _doctor(args: argparse.Namespace) -> int:
-    from .doctor import checks
-    results = checks.run_all()
+class CliError(Exception):
+    pass
+
+
+def out_json(obj: Any) -> None:
+    print(json.dumps(obj, indent=2, ensure_ascii=False, default=str))
+
+
+def table(rows: list[dict[str, Any]], cols: list[str], empty: str = "(none)") -> None:
+    if not rows:
+        print(empty)
+        return
+    cells = [[("" if r.get(c) is None else str(r.get(c))) for c in cols] for r in rows]
+    widths = [max(len(c), *(len(row[i]) for row in cells)) for i, c in enumerate(cols)]
+    widths = [min(w, 48) for w in widths]
+    print("  ".join(c.upper().ljust(w) for c, w in zip(cols, widths)))
+    for row in cells:
+        print("  ".join(v[:w].ljust(w) for v, w in zip(row, widths)))
+
+
+def log_line(line: str) -> None:
+    print(line, file=sys.stderr, flush=True)
+
+
+def parse_json_arg(text: str | None, what: str) -> dict[str, Any]:
+    if not text:
+        return {}
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise CliError(f"{what} is not valid JSON: {e}")
+    if not isinstance(value, dict):
+        raise CliError(f"{what} must be a JSON object")
+    return value
+
+
+def read_json_file(path: str) -> dict[str, Any]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise CliError(f"cannot read {path}: {e}")
+
+
+def metrics_lines(metrics: Any) -> list[str]:
+    lines = []
+    for split, vals in (metrics or {}).items():
+        if isinstance(vals, dict):
+            nums = {k: v for k, v in vals.items() if isinstance(v, (int, float)) and k not in ("n", "k")}
+            lines.append(f"  {split}: " + ", ".join(f"{k} {v:.3f}" if isinstance(v, float) else f"{k} {v}" for k, v in list(nums.items())[:8]))
+    return lines
+
+
+# --- commands ------------------------------------------------------------------------------------------
+
+def cmd_serve(a: argparse.Namespace) -> int:
+    import uvicorn
+    from .app import create_app
+    app = create_app(allow_any_host=a.host not in ("127.0.0.1", "localhost", "::1"))
+    url = f"http://{'127.0.0.1' if a.host in ('0.0.0.0', '::') else a.host}:{a.port}"
+    if not a.no_browser:
+        import threading
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    print(f"Automatoner at {url}")
+    uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
+    return 0
+
+
+def cmd_doctor(a: argparse.Namespace) -> int:
+    if a.install:
+        from .doctor import installers
+        try:
+            t = installers.install_extra(a.install)
+        except (KeyError, ValueError) as e:
+            raise CliError(str(e))
+        res = ops.wait_task(t.id, on_log=lambda l: print(l.rstrip()))
+        return 0 if res["status"] == "done" else 1
+    d = ops.doctor()
+    if a.json:
+        out_json(d)
+        return 1 if d["summary"]["fail"] else 0
     icons = {"ok": "\033[32m✓\033[0m", "warn": "\033[33m!\033[0m", "fail": "\033[31m✗\033[0m", "missing": "\033[33m+\033[0m", "na": "\033[90m-\033[0m"}
     if not sys.stdout.isatty() or sys.platform == "win32":
         icons = {"ok": "ok  ", "warn": "warn", "fail": "FAIL", "missing": "miss", "na": "n/a "}
     group = None
-    for c in results:
+    for c in d["checks"]:
         if c["group"] != group:
             group = c["group"]
             print(f"\n{group.upper()}")
         print(f"  {icons[c['status']]} {c['name']}: {c['detail']}")
-        if c["fix"] and c["status"] in ("missing", "warn") and c["fix"].get("type") in ("extra", "command"):
-            how = f"automatoner doctor --install {c['fix']['extra']}" if c["fix"]["type"] == "extra" else c["fix"]["command"]
-            print(f"      fix: {how}")
-    s = checks.summary(results)
+        f = c["fix"]
+        if f and c["status"] in ("missing", "warn") and f.get("type") in ("extra", "command"):
+            print("      fix: " + (f"automatoner doctor --install {f['extra']}" if f["type"] == "extra" else f["command"]))
+    s = d["summary"]
     print(f"\n{s['ok']} ok, {s['warn']} warnings, {s['missing']} optional parts not installed, {s['fail']} problems")
-    if args.install:
-        from . import tasks
-        from .doctor import installers
-        t = installers.install_extra(args.install)
-        shown = 0
-        while t.status == "running" or shown < len(t.log):
-            while shown < len(t.log):
-                print(t.log[shown]); shown += 1
-            time.sleep(0.2)
-        return 0 if t.status == "done" else 1
     return 1 if s["fail"] else 0
 
 
-def _models(args: argparse.Namespace) -> int:
-    from .catalogue import service
-    for cat in service.categories():
-        if args.category and cat["id"] != args.category:
-            continue
-        print(f"\n{cat['name']}  ({cat['id']})")
-        for m in service.list_models(cat["id"]):
-            t = ", ".join(m["trainer_options"].get(cat["id"], [])) or "planned"
-            st = m["state"]["status"]
-            print(f"  {m['id']:<24} {m['params']:>10} {m['size_mb']:>6} MB  {st:<14} trainer: {t}")
+def cmd_categories(a: argparse.Namespace) -> int:
+    rows = ops.categories()
+    if a.json:
+        out_json(rows)
+    else:
+        table(rows, ["id", "models", "trainable_models", "what_it_does"])
     return 0
 
 
-def _wait_job(job_id: str) -> dict:
-    from .store import db
-    from .training import runner
-    off = 0
-    while True:
-        text, off = runner.read_log(job_id, off)
-        if text:
-            print(text, end="", flush=True)
-        j = db.get("jobs", job_id)
-        if j and j["status"] not in ("queued", "running"):
-            text, off = runner.read_log(job_id, off)
-            print(text, end="")
-            return j
-        time.sleep(0.5)
-
-
-def _train(args: argparse.Namespace) -> int:
-    from .training import runner
-    cfg = json.loads(args.config) if args.config else {}
-    job = runner.create(args.model, args.dataset, args.trainer, None, cfg)
-    print(f"job {job['id']}")
-    j = _wait_job(job["id"])
-    print(f"status: {j['status']}" + (f" ({j['error']})" if j.get("error") else ""))
-    return 0 if j["status"] == "done" else 1
-
-
-def _export(args: argparse.Namespace) -> int:
-    from .export import service
-    t, eid = service.start(args.job, args.exporter, json.loads(args.options) if args.options else {})
-    while t.status == "running":
-        time.sleep(0.2)
-    if t.status != "done":
-        print(t.error); return 1
-    from . import config
-    print(f"exported to {config.exports_dir() / eid}")
+def cmd_models(a: argparse.Namespace) -> int:
+    rows = ops.models(a.category)
+    if a.json:
+        out_json(rows)
+        return 0
+    for r in rows:
+        r["train_with"] = "; ".join(f"{c}: {'/'.join(t) or 'planned'}" for c, t in r["trainers"].items())
+    table(rows, ["id", "params", "size_mb", "status", "train_with"])
     return 0
 
 
-def _serve(args: argparse.Namespace) -> int:
-    import uvicorn
-    from .app import create_app
-    app = create_app(allow_any_host=args.host not in ("127.0.0.1", "localhost", "::1"))
-    url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '::') else args.host}:{args.port}"
-    if not args.no_browser:
-        import threading
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-    print(f"Automatoner at {url}")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+def cmd_download(a: argparse.Namespace) -> int:
+    t = ops.start_download(a.model)
+    res = ops.wait_task(t["task_id"], on_log=log_line)
+    print(res["status"] if res["status"] == "done" else f"failed: {res['error']}")
+    return 0 if res["status"] == "done" else 1
+
+
+def cmd_datasets(a: argparse.Namespace) -> int:
+    from .datasets import service as ds
+    if a.action == "list":
+        rows = ops.datasets_list(a.category)
+        out_json(rows) if a.json else table(rows, ["id", "name", "category", "status", "rows"])
+        return 0
+    if a.action == "show":
+        d = ops.dataset(a.target)
+        if a.json:
+            out_json(d)
+        else:
+            print(f"{d['name']} ({d['category']}) {d['status']}, {d['rows']} rows, splits {d['splits']}")
+            for m in d["errors"] + d["warnings"]:
+                print("  - " + m)
+        return 0
+    if a.action == "delete":
+        ds.delete(a.target)
+        print("deleted")
+        return 0
+    if a.action == "add":
+        if not a.category:
+            raise CliError("--category is required")
+        d = ops.add_dataset_file(a.target, a.name or a.target, a.category, a.label_column)
+        out_json(d) if a.json else print(f"{d['id']}: {d['status']}, {d['rows']} rows, splits {d['splits']}" + "".join(f"\n  - {e}" for e in d["errors"]))
+        return 0 if d["status"] == "ready" else 1
+    if a.action == "generate":
+        if not a.category:
+            raise CliError("--category is required")
+        if a.spec:
+            spec = read_json_file(a.spec)
+        elif a.describe:
+            spec = {"describe": a.describe, "rows": a.rows}
+        else:
+            raise CliError("give --spec FILE (see the Datasets page for the format) or, for tabular data, --describe TEXT")
+        g = ops.start_generation(a.name or "Generated dataset", a.category, spec, a.provider, a.model)
+        res = ops.wait_task(g["task_id"], on_log=log_line)
+        d = ops.dataset(g["dataset_id"], 0)
+        out_json(d) if a.json else print(f"{d['id']}: {d['status']}, {d['rows']} rows" + (f"\n  {res['error']}" if res.get("error") else ""))
+        return 0 if d["status"] == "ready" else 1
+    return 2
+
+
+def cmd_train(a: argparse.Namespace) -> int:
+    cfg = parse_json_arg(a.config, "--config")
+    j = ops.start_training(a.model, a.dataset, a.trainer, cfg)
+    print(f"job {j['id']}", file=sys.stderr)
+    if a.no_wait:
+        out_json(j) if a.json else print(j["id"])
+        return 0
+    final = ops.wait_job(j["id"], on_log=log_line)
+    out_json(final) if a.json else (print(f"{final['id']}: {final['status']}" + (f" ({final['error']})" if final.get("error") else "")), *map(print, metrics_lines(final.get("metrics"))))
+    return 0 if final["status"] == "done" else 1
+
+
+def cmd_jobs(a: argparse.Namespace) -> int:
+    if a.action == "list":
+        rows = ops.jobs(a.limit)
+        out_json(rows) if a.json else table(rows, ["id", "status", "model", "category", "dataset_name"])
+        return 0
+    if not a.target:
+        raise CliError(f"jobs {a.action} needs a job id")
+    if a.action == "show":
+        j = ops.job(a.target, log_lines=a.log_lines)
+        if a.json:
+            out_json(j)
+        else:
+            print(f"{j['id']}: {j['status']}  {j['model']} on {j['dataset_name']}" + (f"\n  error: {j['error']}" if j.get("error") else ""))
+            print("\n".join(metrics_lines(j.get("metrics"))))
+            if j.get("log_tail"):
+                print("\n".join(j["log_tail"]))
+        return 0
+    if a.action == "log":
+        if a.follow:
+            ops.wait_job(a.target, on_log=print)
+        else:
+            print("\n".join(ops.log_tail(a.target, a.lines, 2000)))
+        return 0
+    if a.action == "cancel":
+        r = ops.cancel_job(a.target)
+        print("cancelled" if r["cancelled"] else "nothing to cancel (not running)")
+        return 0 if r["cancelled"] else 1
+    return 2
+
+
+def cmd_export(a: argparse.Namespace) -> int:
+    if a.list or not a.exporter:
+        rows = ops.export_options(a.job)
+        if a.json:
+            out_json(rows)
+        else:
+            for r in rows:
+                print(f"{'*' if r['available'] else ' '} {r['id']:<18} {r['what_it_makes'] if r['available'] else r['reason']}")
+            print("\n* = available. Run: automatoner export --job JOB --exporter ID [--options JSON]")
+        return 0
+    e = ops.start_export(a.job, a.exporter, parse_json_arg(a.options, "--options"))
+    res = ops.wait_task(e["task_id"], on_log=log_line)
+    if res["status"] != "done":
+        print(f"failed: {res['error']}", file=sys.stderr)
+        return 1
+    r = ops.export_result(e["export_id"])
+    out_json(r) if a.json else print(f"exported to {r['location']}" + (f"\nzip: {r['download_zip']}" if r["download_zip"] else "") + (f"\ntry: {r['smoke_test']}" if r["smoke_test"] else ""))
     return 0
+
+
+def cmd_recipes(a: argparse.Namespace) -> int:
+    if a.action == "list":
+        rows = ops.recipes_list()
+        out_json(rows) if a.json else table(rows, ["id", "category", "model", "needs_llm", "export"])
+        return 0
+    if not a.target:
+        raise CliError("recipes run needs a recipe id")
+    r = ops.start_recipe(a.target, a.provider, a.model)
+    res = ops.wait_task(r["task_id"], on_log=log_line)
+    out_json(res) if a.json else print(res["status"] if res["status"] == "done" else f"failed: {res['error']}")
+    if res["status"] == "done" and not a.json:
+        print(json.dumps(res["result"]))
+    return 0 if res["status"] == "done" else 1
+
+
+def cmd_mcp(a: argparse.Namespace) -> int:
+    try:
+        from .mcp_server import Policy, build_server
+    except ModuleNotFoundError as e:
+        if e.name and e.name.split(".")[0] == "mcp":
+            raise CliError("the MCP SDK is not installed. Run: automatoner doctor --install mcp")
+        raise
+    policy = Policy(read_only=a.read_only, allow_llm=a.allow_llm, allow_dirs=[__import__("pathlib").Path(d) for d in a.allow_dir],
+                    max_jobs=a.max_jobs, max_running=a.max_running, max_examples=a.max_examples, max_download_mb=a.max_download_mb)
+    build_server(policy).run("stdio")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="automatoner", description="Train tiny task-specific models. Run with no command to open the web UI.")
+    sub = p.add_subparsers(dest="cmd")
+
+    def add(name: str, help: str, fn, json_flag: bool = True) -> argparse.ArgumentParser:
+        sp = sub.add_parser(name, help=help)
+        sp.set_defaults(fn=fn)
+        if json_flag:
+            sp.add_argument("--json", action="store_true", help="machine-readable output")
+        return sp
+
+    s = add("serve", "start the web interface", cmd_serve, False)
+    s.add_argument("--host", default="127.0.0.1"); s.add_argument("--port", type=int, default=8765); s.add_argument("--no-browser", action="store_true")
+    d = add("doctor", "check that everything needed is installed", cmd_doctor)
+    d.add_argument("--install", metavar="EXTRA", help="install a Python extra: tabular, text, mlx, speech, coreml, mcp")
+    add("categories", "what models can be trained for", cmd_categories)
+    m = add("models", "list the model catalogue", cmd_models); m.add_argument("--category")
+    dl = add("download", "download a model from Hugging Face", cmd_download, False); dl.add_argument("model")
+
+    ds = add("datasets", "list, add, generate, show or delete datasets", cmd_datasets)
+    ds.add_argument("action", choices=["list", "show", "add", "generate", "delete"])
+    ds.add_argument("target", nargs="?", help="dataset id (show, delete) or file path (add)")
+    ds.add_argument("--category"); ds.add_argument("--name"); ds.add_argument("--label-column")
+    ds.add_argument("--spec", help="JSON file describing what to generate"); ds.add_argument("--describe", help="tabular: describe the system in words and let an LLM design the simulator")
+    ds.add_argument("--rows", type=int, default=5000); ds.add_argument("--provider"); ds.add_argument("--model")
+
+    t = add("train", "train a model", cmd_train)
+    t.add_argument("--model", required=True); t.add_argument("--dataset", required=True); t.add_argument("--trainer")
+    t.add_argument("--config", help="JSON of trainer settings"); t.add_argument("--no-wait", action="store_true", help="start the job and return its id")
+
+    j = add("jobs", "list, show, follow or cancel training jobs", cmd_jobs)
+    j.add_argument("action", choices=["list", "show", "log", "cancel"]); j.add_argument("target", nargs="?", help="job id")
+    j.add_argument("--limit", type=int, default=20); j.add_argument("--log-lines", type=int, default=0); j.add_argument("--lines", type=int, default=60)
+    j.add_argument("--follow", "-f", action="store_true")
+
+    e = add("export", "export a finished job for where it will run", cmd_export)
+    e.add_argument("--job", required=True); e.add_argument("--exporter"); e.add_argument("--options", help="JSON"); e.add_argument("--list", action="store_true", help="show the exports that fit this job")
+
+    r = add("recipes", "list or run ready-made pipelines", cmd_recipes)
+    r.add_argument("action", choices=["list", "run"]); r.add_argument("target", nargs="?", help="recipe id"); r.add_argument("--provider"); r.add_argument("--model")
+
+    mc = add("mcp", "serve Automatoner to AI agents over MCP (stdio)", cmd_mcp, False)
+    mc.add_argument("--read-only", action="store_true", help="expose only tools that read")
+    mc.add_argument("--allow-llm", action="store_true", help="let the agent generate data with paid LLM providers")
+    mc.add_argument("--allow-dir", action="append", default=[], help="folder the agent may import dataset files from (repeatable)")
+    mc.add_argument("--max-jobs", type=int, default=5, help="training jobs the agent may start per session")
+    mc.add_argument("--max-running", type=int, default=2, help="jobs that may run at the same time")
+    mc.add_argument("--max-examples", type=int, default=5000, help="largest synthetic dataset the agent may request")
+    mc.add_argument("--max-download-mb", type=int, default=5000, help="largest model the agent may download")
+    return p
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="automatoner")
-    sub = p.add_subparsers(dest="cmd")
-    s = sub.add_parser("serve", help="start the web interface")
-    s.add_argument("--host", default="127.0.0.1"); s.add_argument("--port", type=int, default=8765); s.add_argument("--no-browser", action="store_true")
-    s.set_defaults(fn=_serve)
-    d = sub.add_parser("doctor", help="check that everything needed is installed")
-    d.add_argument("--install", metavar="EXTRA", help="install a Python extra: " + ", ".join(["tabular", "text", "mlx", "speech", "coreml"]))
-    d.set_defaults(fn=_doctor)
-    m = sub.add_parser("models", help="list the model catalogue"); m.add_argument("--category"); m.set_defaults(fn=_models)
-    t = sub.add_parser("train", help="train from the command line")
-    t.add_argument("--model", required=True); t.add_argument("--dataset", required=True); t.add_argument("--trainer"); t.add_argument("--config", help="JSON")
-    t.set_defaults(fn=_train)
-    e = sub.add_parser("export", help="export a finished job")
-    e.add_argument("--job", required=True); e.add_argument("--exporter", required=True); e.add_argument("--options", help="JSON")
-    e.set_defaults(fn=_export)
-    args = p.parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if not getattr(args, "fn", None):
-        args = p.parse_args(["serve"])
-    return args.fn(args)
+        args = parser.parse_args(["serve"])
+    try:
+        return args.fn(args)
+    except CliError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
