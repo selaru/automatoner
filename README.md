@@ -2,7 +2,41 @@
 
 Train tiny, single-purpose models from a browser. Pick a base model, bring or generate a dataset, train, and export for the place it will run (AWS Lambda, Docker, a phone, a browser, a Cactus device).
 
-Built for the "Tiny automatons for AWS" proposal, and general enough for speech, tool-calling and small language models. Runs on Windows, Linux and macOS.
+Covers classic machine learning, text classifiers, speech, tool calling and small language models. Runs on Windows, Linux and macOS.
+
+## What tiny models are good for
+
+A tiny model does one narrow job well, runs in milliseconds on a CPU, and costs almost nothing to run. Ideas, grouped by where they run. The category in brackets is what you pick in Automatoner.
+
+**Infrastructure and operations**
+- Score how unusual this minute is for a service, given its daily rhythm [tabular anomaly].
+- Judge whether a log file's error mix is normal for that service [tabular anomaly].
+- Flag a cloud audit event as normal or strange [tabular classification].
+- Decide whether a detached disk, unused IP or old snapshot is really idle [tabular classification].
+- Tell bots from busy shoppers per IP, to set rate limits from real traffic [tabular classification].
+- Read a one-line config or policy change and say whether it widened or narrowed access [text classification].
+- Route alerts or support tickets to the right team [text classification].
+- Group similar log lines or incidents [embeddings, planned].
+
+**Apps**
+- Turn a spoken or typed note into a structured card: title, summary, steps, in the user's language [text to JSON].
+- Pull fields out of messy text such as invoices, bookings or emails [extraction].
+- Classify sentiment, intent or topic of short messages on the device, so the text never leaves it [text classification].
+- Offline voice commands that become app actions [speech plus tool calling].
+- Add a language or your own product names to speech recognition [speech].
+
+**Smart services and devices**
+- Map a request to a function call: "dim the living room to 30" [tool calling].
+- Wake-word-free command handling on a phone, watch, robot or Raspberry Pi [speech plus tool calling].
+- Predictive checks on sensor readings from machines or buildings: vibration, temperature, power draw [tabular anomaly].
+- Fraud or abuse flags on sign-ups and payments, scored in a few milliseconds [tabular classification].
+
+**Privacy and cost**
+- Replace a call to a large cloud model for a task that never needed one, such as tagging or moderation [any category].
+- Keep sensitive text, audio or records on the user's machine or inside your own account [any category].
+- Run thousands of small checks per second without a GPU or a per-token bill.
+
+Tiny models are a poor fit for open-ended chat, long reasoning, or tasks with no clear right answer. They also need examples of the job you want, which is why Automatoner can generate a starting dataset for you.
 
 ## Install and run
 
@@ -58,7 +92,7 @@ Keys are stored on this computer only, in the data folder, readable by your user
 2. **Datasets.** Upload CSV, Parquet, JSON or JSONL (or a zip with audio), pull a Hugging Face dataset, or generate one. Generators: a tabular simulator (no LLM needed), and LLM writers for text classification, tool calls and text-to-JSON using Ollama, Claude, Gemini, OpenAI or OpenRouter. Every dataset is validated, de-duplicated and split.
 3. **Train.** One subprocess per job, live log and loss curve, cancel kills the whole process tree.
 4. **Export.** Only targets that fit the model and this computer are offered, with the reason when one is not.
-5. **Recipes.** One-click pipelines for the specialists in the deck: rhythm watcher, ALB error mix, IAM whisperer, drift sniffer, cost hunter, WAF classifier, and voice command to tool call.
+5. **Recipes.** One-click pipelines for common small jobs: rhythm watcher, ALB error mix, IAM whisperer, drift sniffer, cost hunter, WAF classifier, and voice command to tool call.
 
 ## What works with what
 

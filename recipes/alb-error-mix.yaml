@@ -1,7 +1,6 @@
 id: alb-error-mix
 name: ALB error-mix scorer
 blurb: Scores each ALB log file against the service's normal share of 4xx and 5xx responses.
-source: "Deck slide 8"
 category: tabular_anomaly
 model: one_class_svm
 trainer: sklearn

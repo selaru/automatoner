@@ -1,7 +1,6 @@
 id: cost-hunter
 name: Cost hunter judge
 blurb: Rules find candidate resources; this small model judges whether each one is really idle.
-source: "Deck slides 4, 5 and 11"
 category: tabular_classification
 model: lightgbm
 trainer: lightgbm

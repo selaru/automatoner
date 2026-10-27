@@ -25,7 +25,6 @@ function RecipeCard({ r }: { r: any }) {
       <div className="row between"><h3>{r.name}</h3>{r.needs_llm ? <Badge kind="warn">needs an LLM</Badge> : <Badge kind="ok">runs offline</Badge>}</div>
       <p className="small muted" style={{ margin: 0 }}>{r.blurb}</p>
       <div className="chips"><Badge>{r.category.replace(/_/g, " ")}</Badge><Badge>{r.model_name}</Badge>{r.export && <Badge>→ {r.export}</Badge>}</div>
-      <div className="small muted">{r.source}</div>
       {!open && !taskId && <div><button className="primary" onClick={() => setOpen(true)}>Set up and run</button></div>}
       {open && !taskId && (
         <div className="stack">
@@ -63,7 +62,7 @@ export default function Home() {
   const [recipes, setRecipes] = useState<any[]>([]);
   useEffect(() => { get("/api/recipes").then(setRecipes); }, []);
   return (
-    <Page title="Tiny models for one job each" sub="Pick a base model, bring or generate a dataset, train, and export for the place it will run. Recipes below wire up the specialists from the Tiny automatons for AWS proposal.">
+    <Page title="Tiny models for one job each" sub="Pick a base model, bring or generate a dataset, train, and export for the place it will run. Recipes below are ready-made starting points.">
       <div className="steps">
         <Link className="step" to="/doctor"><b>Check setup</b><span>Everything installed?</span></Link>
         <Link className="step" to="/models"><b>Choose a model</b><span>By what it can learn</span></Link>

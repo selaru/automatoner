@@ -1,7 +1,6 @@
 id: rhythm-watcher
 name: Rhythm watcher
 blurb: Scores how unusual this minute is for one service, given its daily rhythm.
-source: "Deck slides 4 and 5"
 category: tabular_anomaly
 model: isolation_forest
 trainer: sklearn

@@ -324,7 +324,7 @@ def list_recipes() -> list[dict[str, Any]]:
     out = []
     for r in recipes_mod.list_recipes():
         entry = catalogue.get_entry(r["model"])
-        out.append({**{k: r.get(k) for k in ("id", "name", "blurb", "source", "category", "model", "trainer", "needs_llm", "params")},
+        out.append({**{k: r.get(k) for k in ("id", "name", "blurb", "category", "model", "trainer", "needs_llm", "params")},
                     "model_name": entry["name"] if entry else r["model"], "model_state": catalogue.entry_view(entry)["state"]["status"] if entry else "missing",
                     "export": (r.get("export") or {}).get("exporter")})
     return out

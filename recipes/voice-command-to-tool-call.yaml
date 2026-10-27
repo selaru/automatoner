@@ -1,7 +1,6 @@
 id: voice-command-to-tool-call
 name: Voice command to tool call
 blurb: Needle 3 learns your tools from synthetic examples. Pair it with Whistle to go from speech to tool calls on a small device.
-source: "Research: Whistle and Needle"
 category: tool_calling
 model: needle3
 trainer: needle

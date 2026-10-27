@@ -1,7 +1,6 @@
 id: drift-sniffer
 name: Drift sniffer
 blurb: Reads a one-line config change and says whether it widened, narrowed or left access unchanged.
-source: "Deck slides 4 and 11"
 category: text_classification
 model: minilm-l6
 trainer: hf_text

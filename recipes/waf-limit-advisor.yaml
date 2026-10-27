@@ -1,7 +1,6 @@
 id: waf-limit-advisor
 name: WAF bot-versus-shopper classifier
 blurb: Separates bots from busy shoppers per IP so rate limits can follow real traffic. Percentiles do the rest.
-source: "Deck slide 10"
 category: tabular_classification
 model: logistic_regression
 trainer: sklearn

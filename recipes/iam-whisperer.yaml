@@ -1,7 +1,6 @@
 id: iam-whisperer
 name: IAM whisperer
 blurb: Flags a CloudTrail event as normal or strange from simple event features.
-source: "Deck slides 4, 5 and 11"
 category: tabular_classification
 model: lightgbm
 trainer: lightgbm
