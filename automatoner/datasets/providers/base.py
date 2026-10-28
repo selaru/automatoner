@@ -1,15 +1,17 @@
 """One interface for every LLM that can write synthetic data. Plain HTTP, no vendor SDKs."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import time
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from typing import Any, Callable
 
 import httpx
 
-from ... import config
+from ... import audit, config
 
 PROVIDERS = ["ollama", "anthropic", "gemini", "openai", "openrouter"]
 
@@ -98,9 +100,37 @@ def register_mock(name: str, fn: Callable[[str, str, int, float], str]) -> None:
     _MOCKS[name] = fn
 
 
+def internal_url(url: str) -> bool:
+    """Is this server on this computer or the company network (loopback, private address, or a single-label or .local/.internal name)?"""
+    host = (urlparse(url if "://" in url else f"http://{url}").hostname or "").lower()
+    if not host:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback or ip.is_private or ip.is_link_local
+    except ValueError:
+        return host == "localhost" or "." not in host or host.endswith((".local", ".internal", ".lan", ".home.arpa"))
+
+
+def check_allowed(name: str) -> None:
+    """Local-only mode: refuse anything that would send data to a cloud LLM."""
+    if not config.local_only() or name in _MOCKS:
+        return
+    why = None
+    if name != "ollama":
+        why = f"{name} is a cloud service"
+    elif not internal_url(config.load_settings()["ollama_url"]):
+        why = "the Ollama URL is not on this computer or a private network"
+    if why:
+        audit.record("llm.blocked", provider=name, reason=why)
+        raise ProviderError(f"Local-only mode is on, so data is not sent to {name} ({why}). Use Ollama on this computer or your private network, "
+                            "or turn local-only mode off in Settings (an administrator may have fixed it with AUTOMATONER_LOCAL_ONLY).")
+
+
 def get_provider(name: str | None = None, model: str | None = None) -> Provider:
     s = config.load_settings()
     name = name or s["default_provider"]
+    check_allowed(name)
     model = model or s["provider_models"].get(name, "")
     if name in _MOCKS:
         return Provider(name, model or "mock", _MOCKS[name])
@@ -131,18 +161,34 @@ def ollama_models() -> list[str]:
 
 
 def ask(provider: Provider, system: str, user: str, *, max_tokens: int = 4000, temperature: float = 0.8, retries: int = 4) -> str:
-    delay = 2.0
-    for attempt in range(retries):
-        try:
-            return provider.complete(system, user, max_tokens, temperature)
-        except ProviderError as e:
-            msg = str(e)
-            fatal = any(code in msg for code in ("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "No API key"))
-            if fatal or attempt == retries - 1:
-                raise
-            time.sleep(delay)
-            delay *= 2
-    raise ProviderError("unreachable")
+    """One logical request to a model, with retries. The audit log gets sizes and outcome, never the text."""
+    check_allowed(provider.name)
+    started = time.time()
+    attempts = 0
+    outcome = "ok"
+    reply_chars = 0
+    try:
+        delay = 2.0
+        for attempt in range(retries):
+            attempts += 1
+            try:
+                reply = provider.complete(system, user, max_tokens, temperature)
+                reply_chars = len(reply)
+                return reply
+            except ProviderError as e:
+                msg = str(e)
+                fatal = any(code in msg for code in ("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "No API key"))
+                if fatal or attempt == retries - 1:
+                    raise
+                time.sleep(delay)
+                delay *= 2
+        raise ProviderError("unreachable")
+    except ProviderError:
+        outcome = "error"
+        raise
+    finally:
+        audit.record("llm.call", provider=provider.name, model=provider.model, sent_chars=len(system) + len(user), received_chars=reply_chars,
+                     attempts=attempts, seconds=round(time.time() - started, 2), outcome=outcome)
 
 
 def extract_json(text: str) -> Any:

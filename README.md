@@ -157,6 +157,9 @@ automatoner export --job job-... --exporter lambda_zip --options '{"function_nam
 
 automatoner recipes list
 automatoner recipes run rhythm-watcher     # data, model, training and export in one go
+
+automatoner token create                   # access token for sharing the server (see "Deploying in a company")
+automatoner audit --limit 20               # who did what
 ```
 
 `--spec` takes the same JSON the Datasets page uses (a simulator spec for tabular data, `{"labels": [...], "per_label": 100}` for text classification, `{"tools": [...], "total": 200}` for tool calling). For tabular data you can instead write `--describe "Lambda behind an ALB for a web shop ..."` and let an LLM design the simulator (needs a provider key in Settings, or Ollama). Training and generation progress prints to the terminal's error stream, so `--json` output stays clean on stdout. A job keeps running if you close the terminal; check it later with `jobs show`.
@@ -196,13 +199,73 @@ For hosts configured with a JSON file (Claude Desktop, Cursor and similar):
 |---|---|---|
 | Write tools | on | `--read-only` removes them entirely |
 | Importing files | only from `~/.automatoner/inbox` (symlinks and `..` are resolved and checked) | `--allow-dir FOLDER`, repeatable |
-| Data written by paid LLM providers | off (the tabular simulator needs no LLM and is always allowed) | `--allow-llm` |
+| Data written by paid LLM providers | off (the tabular simulator needs no LLM and is always allowed). Local-only mode blocks it even with the flag | `--allow-llm` |
 | Training jobs per session | 5 | `--max-jobs N` |
 | Jobs running at once | 2 | `--max-running N` |
 | Largest synthetic dataset | 5000 examples | `--max-examples N` |
 | Largest model download | 5000 MB | `--max-download-mb N` |
 
 Stored API keys and tokens are never returned by any tool, and settings cannot be read or changed through MCP. Anything the agent runs still uses your computer and any provider key you have saved, so review the limits before enabling `--allow-llm`. A good first prompt: "Use automatoner to train an anomaly detector on the CSV in my inbox and export it for AWS Lambda."
+
+## Deploying in a company
+
+Automatoner is built for one person on one computer. These notes cover running it for a team, and what protects you in each setup.
+
+| Setup | What to do |
+|---|---|
+| **One person, one computer** | Nothing. The server listens on `127.0.0.1` only and rejects requests with a foreign Host or Origin, so a web page you visit cannot talk to it. |
+| **A shared server** (GPU box, cloud VM) | Create an access token, put the server behind TLS (a VPN, or a reverse proxy such as nginx, Caddy or oauth2-proxy), and start it with `--host`. |
+| **AI agents** | Use the MCP server over stdio. It runs as the user who starts it, with the limits listed above. |
+| **Scripts and CI** | Use the command line. It runs as the calling user and needs no token. |
+
+### Access token
+
+On a non-loopback address (`--host 0.0.0.0` or any address other than `127.0.0.1`), Automatoner **refuses to start without an access token**.
+
+```
+automatoner token create          # prints the token once and saves it to ~/.automatoner/token
+automatoner serve --host 0.0.0.0  # the web interface now asks for the token
+```
+
+Or set `AUTOMATONER_TOKEN` to a random value of at least 20 characters, which suits containers and service managers. The environment variable wins over the file.
+
+- **Browser:** sign in once with the token. The browser keeps an HttpOnly, SameSite=Strict cookie derived from the token, never the token itself. Failed sign-ins are slowed down, limited to 10 a minute per address, and logged.
+- **Scripts calling the API:** send `Authorization: Bearer <token>`.
+- **Rotate or remove:** `automatoner token rotate` and `automatoner token remove`, then restart the server. `automatoner token status` shows where the token comes from without printing it.
+- **If a token exists, it is enforced everywhere**, including on `127.0.0.1`.
+
+The token travels in clear text over plain HTTP, so use TLS in front of the server. There are no user accounts or roles: everyone with the token can do everything, including using the API keys saved on the server. If you need per-person sign-in, put the server behind your company's single sign-on proxy and keep the token as a second layer. If you run it behind a proxy that terminates TLS, forward `X-Forwarded-Proto: https` so the cookie is marked Secure.
+
+### Local-only mode
+
+Turn on **Settings, Privacy, Local-only mode** to guarantee that company data is never sent to a cloud LLM. Only Ollama may write synthetic data, and only when its URL is on this computer or a private network (loopback, private address, or a name like `gpu-box` or `ollama.corp.internal`). Claude, Gemini, OpenAI and OpenRouter are refused everywhere: the web interface, the command line, recipes and MCP agents. Blocked attempts are written to the audit log.
+
+An administrator can pin the policy so nobody can switch it off from the web interface:
+
+```
+AUTOMATONER_LOCAL_ONLY=1 automatoner serve --host 0.0.0.0
+```
+
+Model and dataset downloads from Hugging Face still work, because they fetch files and send no data. Block that at your firewall if you need to.
+
+### Audit log
+
+Every start of a training job, dataset import or generation, model download, export (and its download), install, settings change, token change, sign-in (successful, failed or denied), recipe, MCP tool call and LLM request is recorded with the time and who did it (`web:<address>`, `cli:<user>` or `mcp:<user>`).
+
+```
+automatoner audit                  # the last 50 entries
+automatoner audit --action llm     # only LLM calls and blocked attempts
+automatoner audit --json
+```
+
+The same list is on the Settings page. The log never contains API keys, tokens, prompts, dataset rows or model output. LLM requests are recorded by provider, model and size only. It is a plain JSON-lines file, `~/.automatoner/audit.log`, rotated at 10 MB (five files kept). Set `AUTOMATONER_AUDIT_FILE` to write it elsewhere. It is a record for review, not tamper-proof: forward it to your log system if you need that.
+
+### Other things to know
+
+- On macOS and Linux the token, settings and audit files are readable by their owner only. Windows has no such file modes, so those files are protected by the folder's permissions in your user profile (`%LOCALAPPDATA%\automatoner`). On a shared Windows server, run Automatoner under its own account.
+- Saved provider keys stay in `~/.automatoner/settings.json` as plain text, readable only by the user who runs the server. On a shared server, run it as a dedicated user, or skip cloud keys altogether and turn on local-only mode.
+- Downloaded models and datasets come from Hugging Face. Use models you trust, and review dataset sources before importing them.
+- Training and exports run as the server's user, with no sandbox. Use a container or a dedicated account if the data or the model files are not yours to trust.
 
 ## What works with what
 
@@ -222,7 +285,7 @@ Listed in the catalogue but not trainable yet: GLiNER, Moonshine, Whisper, Parak
 - Local Needle training tunes the full 20 layers, so exporting fewer layers loses accuracy. Check the test score the job reports.
 - Core ML covers the autoencoder only: coremltools lags current scikit-learn and PyTorch.
 - The Apple Core AI export is a port of `taskllm/scripts/export_coreai.sh` and has not been run end to end.
-- The server binds to 127.0.0.1 and rejects requests with a foreign Host or Origin. Only use `--host 0.0.0.0` on a network you trust.
+- The server binds to 127.0.0.1 and rejects requests with a foreign Host or Origin. To share it, read "Deploying in a company": it needs an access token and TLS.
 - Data lives in `~/.automatoner` (`%LOCALAPPDATA%\automatoner` on Windows). Override with `AUTOMATONER_HOME`.
 
 ## Development

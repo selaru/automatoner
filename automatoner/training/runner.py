@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .. import config, util
+from .. import audit, config, util
 from ..catalogue import service as catalogue
 from ..datasets import service as datasets
 from ..store import db
@@ -75,6 +75,7 @@ def create(model_id: str, dataset_id: str, trainer: str | None, category: str | 
     job_id = util.new_id("job-")
     jd = job_dir(job_id)
     jd.mkdir(parents=True)
+    audit.record("job.start", job=job_id, model=model_id, dataset=dataset_id, trainer=trainer)
     doc = {"id": job_id, "status": "queued", "model_id": model_id, "model_name": entry["name"], "dataset_id": dataset_id,
            "dataset_name": ds["name"], "trainer": trainer, "category": category, "config": cfg, "created": util.now_iso(),
            "started": None, "finished": None, "error": None, "summary": None}
@@ -162,6 +163,7 @@ def cancel(job_id: str) -> bool:
     pid = proc.pid if proc is not None and proc.poll() is None else (doc.get("pid") if _worker_alive(doc.get("pid")) else None)
     if pid is None:
         return False
+    audit.record("job.cancel", job=job_id)
     db.update("jobs", job_id, status="cancelled")
     try:
         import psutil
@@ -217,6 +219,7 @@ def manifest(job_id: str) -> dict[str, Any] | None:
 
 
 def delete(job_id: str) -> None:
+    audit.record("job.delete", job=job_id)
     cancel(job_id)
     import shutil
     shutil.rmtree(job_dir(job_id), ignore_errors=True)

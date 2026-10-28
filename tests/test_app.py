@@ -168,8 +168,9 @@ def test_rebinding_and_cross_site_requests_are_refused(client):
 
 def test_non_loopback_server_accepts_its_own_host():
     from automatoner.app import create_app as make
-    c = TestClient(make(allow_any_host=True))
-    assert c.get("/api/health", headers={"host": "gpu-box.lan:8765"}).status_code == 200
+    tok = "t" * 32
+    c = TestClient(make(allow_any_host=True, token=tok))
+    assert c.get("/api/health", headers={"host": "gpu-box.lan:8765", "authorization": f"Bearer {tok}"}).status_code == 200
 
 
 def test_resume_job_id_is_validated():

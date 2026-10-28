@@ -5,7 +5,7 @@ import json
 import shutil
 from typing import Any
 
-from .. import config, tasks, util
+from .. import audit, config, tasks, util
 from ..store import db
 from ..training import runner
 from .base import ExportContext, ExportError, Exporter
@@ -54,6 +54,7 @@ def start(job_id: str, exporter_id: str, options: dict[str, Any] | None) -> tupl
     if not ok:
         raise ExportError(f"{exporter.name}: {why}")
     export_id = util.new_id("exp-")
+    audit.record("export.start", export=export_id, job=job_id, exporter=exporter_id)
     out_dir = config.exports_dir() / export_id
     out_dir.mkdir(parents=True)
     doc = {"id": export_id, "job_id": job_id, "exporter": exporter_id, "exporter_name": exporter.name, "status": "running",
@@ -87,6 +88,7 @@ def download_path(export_id: str):
 
 
 def delete(export_id: str) -> None:
+    audit.record("export.delete", export=export_id)
     shutil.rmtree(util.safe_child(config.exports_dir(), export_id), ignore_errors=True)
     z = util.safe_child(config.exports_dir(), f"{export_id}.zip")
     if z.exists():

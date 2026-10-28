@@ -35,7 +35,7 @@ function RecipeCard({ r }: { r: any }) {
           {r.needs_llm && providers && (
             <label className="field"><span className="lbl">LLM that writes the data</span>
               <select value={provider} onChange={(e) => setProvider(e.target.value)}>
-                {providers.providers.map((p: any) => <option key={p.id} value={p.id} disabled={!p.configured}>{p.id}{p.configured ? ` (${p.model})` : " (no key)"}</option>)}
+                {providers.providers.map((p: any) => <option key={p.id} value={p.id} disabled={!p.configured || p.allowed === false}>{p.id}{p.allowed === false ? " (blocked by local-only mode)" : p.configured ? ` (${p.model})` : " (no key)"}</option>)}
               </select></label>
           )}
           {r.model_state === "not_downloaded" && <Notice>{r.model_name} will be downloaded first.</Notice>}

@@ -11,7 +11,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket,
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .. import __version__, config, tasks
+from .. import __version__, audit, config, tasks
 from ..catalogue import service as catalogue
 from ..datasets import providers
 from ..datasets import service as datasets
@@ -163,8 +163,10 @@ def synthetic(body: Synthetic) -> dict[str, Any]:
 @router.get("/providers")
 def list_providers() -> dict[str, Any]:
     s = config.load_settings()
-    return {"providers": [{"id": p, "model": s["provider_models"].get(p), "configured": p == "ollama" or bool(s.get(f"{p}_api_key"))} for p in providers.PROVIDERS],
-            "default": s["default_provider"], "ollama_models": providers.ollama_models()}
+    local = config.local_only()
+    return {"providers": [{"id": p, "model": s["provider_models"].get(p), "configured": p == "ollama" or bool(s.get(f"{p}_api_key")),
+                           "allowed": not local or (p == "ollama" and providers.internal_url(s["ollama_url"]))} for p in providers.PROVIDERS],
+            "default": s["default_provider"], "local_only": local, "ollama_models": providers.ollama_models()}
 
 
 @router.post("/providers/{name}/test")
@@ -314,6 +316,7 @@ def download_export(export_id: str):
     p = exports.download_path(export_id)
     if p is None:
         raise HTTPException(404, "nothing to download")
+    audit.record("export.download", export=export_id)
     return FileResponse(p, filename=p.name)
 
 
@@ -359,8 +362,16 @@ def get_settings() -> dict[str, Any]:
 
 @router.put("/settings")
 def put_settings(update: dict[str, Any]) -> dict[str, Any]:
-    config.save_settings({k: v for k, v in update.items() if v is not None})
+    try:
+        config.save_settings({k: v for k, v in update.items() if v is not None})
+    except ValueError as e:
+        raise _bad(e, 409)
     return config.public_settings()
+
+
+@router.get("/audit")
+def get_audit(limit: int = 100, action: str | None = None) -> list[dict[str, Any]]:
+    return audit.read(max(1, min(limit, 1000)), action)
 
 
 @router.post("/settings/hf-token/check")

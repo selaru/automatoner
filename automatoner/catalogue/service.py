@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from .. import config, tasks
+from .. import audit, config, tasks
 from ..store import db
 
 CATALOGUE_FILE = Path(__file__).with_name("catalogue.yaml")
@@ -100,6 +100,7 @@ def start_download(model_id: str) -> tasks.Task:
         raise KeyError(model_id)
     if entry["source"] == "builtin":
         raise ValueError("Builtin algorithms need no download.")
+    audit.record("model.download", model=model_id, repo=entry.get("repo"))
     existing = tasks.get(f"dl-{model_id}")
     if existing and existing.status == "running":
         return existing
@@ -146,6 +147,7 @@ def start_download(model_id: str) -> tasks.Task:
 
 def remove(model_id: str) -> None:
     """Forget the model and delete its files from the Hugging Face cache."""
+    audit.record("model.remove", model=model_id)
     entry = get_entry(model_id)
     if entry is None:
         raise KeyError(model_id)
