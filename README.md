@@ -223,7 +223,7 @@ Automatoner is built for one person on one computer. These notes cover running i
 On a non-loopback address (`--host 0.0.0.0` or any address other than `127.0.0.1`), Automatoner **refuses to start without an access token**.
 
 ```
-automatoner token create          # prints the token once and saves it to ~/.automatoner/token (owner-only)
+automatoner token create          # prints the token once and saves it to ~/.automatoner/token
 automatoner serve --host 0.0.0.0  # the web interface now asks for the token
 ```
 
@@ -258,10 +258,11 @@ automatoner audit --action llm     # only LLM calls and blocked attempts
 automatoner audit --json
 ```
 
-The same list is on the Settings page. The log never contains API keys, tokens, prompts, dataset rows or model output. LLM requests are recorded by provider, model and size only. It is a plain JSON-lines file, `~/.automatoner/audit.log`, readable by its owner only and rotated at 10 MB (five files kept). Set `AUTOMATONER_AUDIT_FILE` to write it elsewhere. It is a record for review, not tamper-proof: forward it to your log system if you need that.
+The same list is on the Settings page. The log never contains API keys, tokens, prompts, dataset rows or model output. LLM requests are recorded by provider, model and size only. It is a plain JSON-lines file, `~/.automatoner/audit.log`, rotated at 10 MB (five files kept). Set `AUTOMATONER_AUDIT_FILE` to write it elsewhere. It is a record for review, not tamper-proof: forward it to your log system if you need that.
 
 ### Other things to know
 
+- On macOS and Linux the token, settings and audit files are readable by their owner only. Windows has no such file modes, so those files are protected by the folder's permissions in your user profile (`%LOCALAPPDATA%\automatoner`). On a shared Windows server, run Automatoner under its own account.
 - Saved provider keys stay in `~/.automatoner/settings.json` as plain text, readable only by the user who runs the server. On a shared server, run it as a dedicated user, or skip cloud keys altogether and turn on local-only mode.
 - Downloaded models and datasets come from Hugging Face. Use models you trust, and review dataset sources before importing them.
 - Training and exports run as the server's user, with no sandbox. Use a container or a dedicated account if the data or the model files are not yours to trust.

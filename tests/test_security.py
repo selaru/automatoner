@@ -1,5 +1,6 @@
 """Access token, local-only mode and the audit log."""
 import json
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -91,7 +92,8 @@ def test_token_file_is_private_and_env_overrides(monkeypatch, tmp_path):
     assert auth.configured_token() is None
     t = auth.create_token()
     assert len(t) >= auth.MIN_LENGTH and auth.configured_token() == t
-    assert (auth.token_path().stat().st_mode & 0o077) == 0
+    if sys.platform != "win32":  # Windows has no owner-only file modes; the data folder sits in the user profile
+        assert (auth.token_path().stat().st_mode & 0o077) == 0
     with pytest.raises(ValueError):
         auth.create_token()
     assert auth.create_token(rotate=True) != t
@@ -234,7 +236,8 @@ def test_audit_file_is_private_rotates_and_survives_bad_input(monkeypatch, tmp_p
     monkeypatch.setenv("AUTOMATONER_AUDIT_FILE", str(tmp_path / "a" / "audit.log"))
     audit.record("test.one", api_key="sk-nope", note="x" * 500, nested={"password": "p", "ok": 1})
     p = audit.path()
-    assert (p.stat().st_mode & 0o077) == 0
+    if sys.platform != "win32":
+        assert (p.stat().st_mode & 0o077) == 0
     e = audit.read(1)[0]
     assert e["api_key"] == "<hidden>" and e["nested"]["password"] == "<hidden>" and len(e["note"]) < 210
     monkeypatch.setattr(audit, "MAX_BYTES", 200)
