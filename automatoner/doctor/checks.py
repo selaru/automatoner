@@ -202,6 +202,15 @@ def hf_check() -> dict[str, Any]:
         return _c("hf-token", "Hugging Face token", "fail", f"token rejected or Hugging Face unreachable ({type(e).__name__})", group="accounts")
 
 
+def policy_check() -> dict[str, Any]:
+    from .. import auth
+    on, locked = config.local_only(), config.local_only_locked()
+    detail = ("on" + (" (fixed by AUTOMATONER_LOCAL_ONLY)" if locked else "") + ": only Ollama on this computer or a private network writes data") if on \
+        else "off: cloud providers with a key can write data (turn on in Settings to keep data inside)"
+    tok = auth.source()
+    return _c("local-only", "Local-only mode", "ok", detail + ". Access token: " + (f"set ({tok})" if tok else "not set (fine on this computer only)"), group="accounts")
+
+
 def provider_checks() -> list[dict[str, Any]]:
     s = config.load_settings()
     out = []
@@ -226,7 +235,7 @@ def run_all() -> list[dict[str, Any]]:
     if c:
         checks.append(c)
     checks += windows_checks()
-    checks += [hf_check(), *provider_checks()]
+    checks += [hf_check(), policy_check(), *provider_checks()]
     return checks
 
 

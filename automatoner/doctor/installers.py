@@ -7,7 +7,7 @@ import subprocess
 import sys
 from typing import Any
 
-from .. import config, tasks
+from .. import audit, config, tasks
 from .checks import EXTRAS, _host_matches
 
 
@@ -32,6 +32,7 @@ def install_extra(extra: str) -> tasks.Task:
         raise KeyError(extra)
     if not _host_matches(EXTRAS[extra].get("platforms")):
         raise ValueError(f"'{extra}' is not available on this computer")
+    audit.record("install.extra", extra=extra)
 
     def run(task: tasks.Task) -> dict[str, Any]:
         wanted = sorted(set(installed_extras()) | {extra} | set(config.load_settings().get("enabled_extras", [])))
@@ -56,6 +57,7 @@ def install_extra(extra: str) -> tasks.Task:
 
 
 def fetch_llamacpp() -> tasks.Task:
+    audit.record("install.llamacpp")
     def run(task: tasks.Task) -> dict[str, Any]:
         if not shutil.which("git"):
             raise RuntimeError("git is required")

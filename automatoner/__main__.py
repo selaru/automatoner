@@ -7,13 +7,14 @@ Add --json to list and show commands for machine-readable output. Exit code 0 me
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import sys
 import time
 import webbrowser
 from typing import Any
 
-from . import ops
+from . import audit, auth, ops
 
 
 class CliError(Exception):
@@ -74,13 +75,50 @@ def metrics_lines(metrics: Any) -> list[str]:
 def cmd_serve(a: argparse.Namespace) -> int:
     import uvicorn
     from .app import create_app
-    app = create_app(allow_any_host=a.host not in ("127.0.0.1", "localhost", "::1"))
+    remote = a.host not in ("127.0.0.1", "localhost", "::1")
+    app = create_app(allow_any_host=remote)  # refuses to start on a non-loopback address without an access token
+    if auth.configured_token():
+        print(f"Access token required (from {auth.source()}). The web interface asks for it once; scripts send 'Authorization: Bearer <token>'.")
+    if remote:
+        print("Listening beyond this computer. Put it behind TLS (VPN or reverse proxy): the token travels in clear text over plain HTTP.", file=sys.stderr)
     url = f"http://{'127.0.0.1' if a.host in ('0.0.0.0', '::') else a.host}:{a.port}"
     if not a.no_browser:
         import threading
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
     print(f"Automatoner at {url}")
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning")
+    return 0
+
+
+def cmd_token(a: argparse.Namespace) -> int:
+    if a.action in ("create", "rotate"):
+        try:
+            t = auth.create_token(rotate=a.action == "rotate")
+        except ValueError as e:
+            raise CliError(str(e))
+        audit.record(f"token.{a.action}")
+        print(t)
+        print(f"Saved to {auth.token_path()} (owner-only). Restart `automatoner serve` to use it. It is shown once here; to see it again, read that file.", file=sys.stderr)
+    elif a.action == "remove":
+        removed = auth.remove_token()
+        audit.record("token.remove")
+        print("token removed" if removed else "no token file")
+    else:
+        src = auth.source()
+        print(f"access token: {'set, from ' + src if src else 'not set'}")
+    return 0
+
+
+def cmd_audit(a: argparse.Namespace) -> int:
+    rows = audit.read(a.limit, a.action)
+    if a.json:
+        out_json(rows)
+        return 0
+    if not rows:
+        print(f"no entries yet ({audit.path()})")
+    for e in reversed(rows):
+        extra = " ".join(f"{k}={v}" for k, v in e.items() if k not in ("time", "actor", "action"))
+        print(f"{e['time']}  {e['actor']:<18} {e['action']:<18} {extra}")
     return 0
 
 
@@ -269,6 +307,8 @@ def cmd_mcp(a: argparse.Namespace) -> int:
         raise
     policy = Policy(read_only=a.read_only, allow_llm=a.allow_llm, allow_dirs=[__import__("pathlib").Path(d) for d in a.allow_dir],
                     max_jobs=a.max_jobs, max_running=a.max_running, max_examples=a.max_examples, max_download_mb=a.max_download_mb)
+    audit.set_actor(f"mcp:{getpass.getuser()}")
+    audit.record("mcp.start", read_only=a.read_only, allow_llm=a.allow_llm, allow_dirs=a.allow_dir)
     build_server(policy).run("stdio")
     return 0
 
@@ -288,6 +328,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--host", default="127.0.0.1"); s.add_argument("--port", type=int, default=8765); s.add_argument("--no-browser", action="store_true")
     d = add("doctor", "check that everything needed is installed", cmd_doctor)
     d.add_argument("--install", metavar="EXTRA", help="install a Python extra: tabular, text, mlx, speech, coreml, mcp")
+    tk = add("token", "manage the access token for the web interface (needed to listen beyond this computer)", cmd_token, False)
+    tk.add_argument("action", choices=["create", "rotate", "remove", "status"], nargs="?", default="status")
+    au = add("audit", "show the audit log: who did what", cmd_audit)
+    au.add_argument("--limit", type=int, default=50); au.add_argument("--action", help="only entries whose action starts with this, e.g. llm or job")
     add("categories", "what models can be trained for", cmd_categories)
     m = add("models", "list the model catalogue", cmd_models); m.add_argument("--category")
     dl = add("download", "download a model from Hugging Face", cmd_download, False); dl.add_argument("model")
@@ -330,6 +374,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not getattr(args, "fn", None):
         args = parser.parse_args(["serve"])
+    actor = audit.set_actor(f"cli:{getpass.getuser()}")
+    if args.fn not in (cmd_audit, cmd_token, cmd_serve):
+        audit.record("cli", command=" ".join(str(x) for x in (argv if argv is not None else sys.argv[1:])[:2]))
     try:
         return args.fn(args)
     except CliError as e:

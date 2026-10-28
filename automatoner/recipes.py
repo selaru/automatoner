@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from . import config, tasks
+from . import audit, config, tasks
 from .catalogue import service as catalogue
 from .datasets import service as datasets
 from .export import service as exports
@@ -87,6 +87,7 @@ def run(recipe_id: str, params: dict[str, Any] | None = None, provider: str | No
     recipe = get(recipe_id)
     if recipe is None:
         raise KeyError(recipe_id)
+    audit.record("recipe.run", recipe=recipe_id, provider=provider, model=model)
     params = {**{p["key"]: p.get("default") for p in recipe.get("params", [])}, **(params or {})}
 
     def pipeline(task: tasks.Task) -> dict[str, Any]:

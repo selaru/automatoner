@@ -22,7 +22,7 @@ function ProviderPick({ value, onChange }: { value: { provider: string; model: s
     <div className="grid cols-2">
       <label className="field"><span className="lbl">LLM that writes the data</span>
         <select value={value.provider} onChange={(e) => onChange({ provider: e.target.value, model: "" })}>
-          {p.providers.map((x: any) => <option key={x.id} value={x.id}>{x.id}{x.configured ? "" : " (no key)"}</option>)}</select></label>
+          {p.providers.map((x: any) => <option key={x.id} value={x.id} disabled={x.allowed === false}>{x.id}{x.allowed === false ? " (blocked by local-only mode)" : x.configured ? "" : " (no key)"}</option>)}</select></label>
       <label className="field"><span className="lbl">Model (blank = {p.providers.find((x: any) => x.id === value.provider)?.model})</span>
         <input value={value.model} onChange={(e) => onChange({ ...value, model: e.target.value })} /></label>
     </div>

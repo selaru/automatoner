@@ -6,6 +6,7 @@ async function req<T>(method: string, url: string, body?: unknown, form?: FormDa
     headers: body !== undefined ? { "content-type": "application/json" } : undefined,
     body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
   });
+  if (r.status === 401 && !url.startsWith("/api/auth/")) window.dispatchEvent(new Event("auth-required"));
   if (!r.ok) {
     let msg = r.statusText;
     try { const j = await r.json(); msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j); } catch { /* keep status text */ }

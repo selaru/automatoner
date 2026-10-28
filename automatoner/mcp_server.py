@@ -22,7 +22,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from . import __version__, config, ops
+from . import __version__, audit, config, ops
 from .catalogue import service as catalogue
 from .store import db
 
@@ -94,10 +94,17 @@ def build_server(policy: Policy | None = None) -> MCPServer:
         def wrap(fn):
             @functools.wraps(fn)
             def inner(*a: Any, **k: Any):
+                # Arguments are logged by name and short value; secrets and free text are hidden by the audit module.
                 try:
-                    return fn(*a, **k)
+                    result = fn(*a, **k)
                 except ValueError as e:
+                    audit.record("mcp.tool", tool=fn.__name__, args=k, outcome="refused", reason=str(e))
                     raise ToolError(str(e)) from None
+                except Exception:
+                    audit.record("mcp.tool", tool=fn.__name__, args=k, outcome="error")
+                    raise
+                audit.record("mcp.tool", tool=fn.__name__, args=k, outcome="ok")
+                return result
             return register(inner)
         return wrap
 
@@ -106,7 +113,7 @@ def build_server(policy: Policy | None = None) -> MCPServer:
     @tool(annotations=RO)
     def get_limits() -> dict[str, Any]:
         """What this server allows: read-only mode, folders files can be imported from, LLM use, limits and how many jobs were started."""
-        return {"read_only": policy.read_only, "llm_data_generation_allowed": policy.allow_llm, "import_folders": [str(r) for r in policy.roots()],
+        return {"read_only": policy.read_only, "llm_data_generation_allowed": policy.allow_llm and not config.local_only(), "local_only_mode": config.local_only(), "import_folders": [str(r) for r in policy.roots()],
                 "max_training_jobs_per_session": policy.max_jobs, "training_jobs_started": session.jobs_started, "max_jobs_running_at_once": policy.max_running,
                 "max_synthetic_examples": policy.max_examples, "max_model_download_mb": policy.max_download_mb}
 

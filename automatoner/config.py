@@ -62,6 +62,7 @@ DEFAULTS: dict[str, Any] = {
         "openrouter": "anthropic/claude-sonnet-5-5",
     },
     "enabled_extras": [],
+    "local_only": False,
 }
 _lock = threading.Lock()
 
@@ -84,13 +85,33 @@ def load_settings() -> dict[str, Any]:
     return merged
 
 
+def local_only_locked() -> bool:
+    """True when an administrator pinned the policy with AUTOMATONER_LOCAL_ONLY, so the UI cannot change it."""
+    return os.environ.get("AUTOMATONER_LOCAL_ONLY", "").strip() != ""
+
+
+def local_only() -> bool:
+    """Local-only mode: synthetic data may only be written by a local model (Ollama on this network). Nothing goes to cloud LLMs."""
+    env = os.environ.get("AUTOMATONER_LOCAL_ONLY", "").strip().lower()
+    if env:
+        return env in ("1", "true", "yes", "on")
+    return bool(load_settings().get("local_only"))
+
+
 def save_settings(update: dict[str, Any]) -> dict[str, Any]:
     current = load_settings()
+    if "local_only" in update and local_only_locked() and bool(update["local_only"]) != local_only():
+        raise ValueError("local-only mode is fixed by the AUTOMATONER_LOCAL_ONLY environment variable on this server")
+    changed: list[str] = []
     for k, v in update.items():
         if k not in DEFAULTS:
             continue
         if k in SECRET_KEYS and v is None:
             continue
+        if k in SECRET_KEYS:
+            changed.append(f"{k}: {'set' if v else 'cleared'}")
+        elif current.get(k) != v:
+            changed.append(f"{k}: changed")
         if k == "provider_models" and isinstance(v, dict):
             current["provider_models"] = {**current["provider_models"], **v}
         else:
@@ -100,6 +121,9 @@ def save_settings(update: dict[str, Any]) -> dict[str, Any]:
         p.write_text(json.dumps(current, indent=2), encoding="utf-8")
         if sys.platform != "win32":
             os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
+    if changed:
+        from . import audit
+        audit.record("settings.change", changes=changed)
     return current
 
 
@@ -107,6 +131,7 @@ def public_settings() -> dict[str, Any]:
     """Settings safe to send to the browser: secrets become booleans."""
     s = load_settings()
     out = {k: v for k, v in s.items() if k not in SECRET_KEYS}
+    out["local_only"], out["local_only_locked"] = local_only(), local_only_locked()
     for k in SECRET_KEYS:
         out[f"{k}_set"] = bool(s.get(k))
     return out

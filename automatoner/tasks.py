@@ -4,6 +4,7 @@ Training is different: it runs in its own subprocess, see training/runner.py.
 """
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 import traceback
@@ -73,7 +74,8 @@ def start(kind: str, title: str, fn: Callable[[Task], Any], *, id: str | None = 
         finally:
             task.finished = time.time()
 
-    threading.Thread(target=runner, daemon=True, name=f"task-{task.id}").start()
+    ctx = contextvars.copy_context()  # keeps the audit actor attached to work done in the background
+    threading.Thread(target=lambda: ctx.run(runner), daemon=True, name=f"task-{task.id}").start()
     return task
 
 

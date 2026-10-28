@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from .. import config, tasks, util
+from .. import audit, config, tasks, util
 from ..store import db
 from . import schemas, validators
 from .importers import files as ifiles
@@ -102,6 +102,7 @@ def _finish(ds_id: str, *, name: str, category: str, source: str, rows: list[dic
 def import_upload(name: str, category: str, uploads: list[tuple[str, bytes]], options: dict[str, Any] | None = None) -> dict[str, Any]:
     options = options or {}
     ds_id = util.new_id("ds-")
+    audit.record("dataset.import", dataset=ds_id, name=name, category=category, source="upload", files=[n for n, _ in uploads])
     d = dataset_dir(ds_id)
     d.mkdir(parents=True, exist_ok=True)
     try:
@@ -155,6 +156,7 @@ def import_hf(name: str, category: str, repo: str, *, split: str = "train", subs
     options = options or {}
     df = ihf.fetch(repo, split=split, subset=subset, max_rows=max_rows)
     ds_id = util.new_id("ds-")
+    audit.record("dataset.import", dataset=ds_id, name=name, category=category, source="huggingface", repo=repo)
     if category in schemas.TABULAR:
         return _finish(ds_id, name=name, category=category, source="hf", df=df, options=options, extra={"repo": repo})
     rows = json.loads(df.to_json(orient="records", force_ascii=False))
@@ -168,6 +170,7 @@ def start_synthetic(name: str, category: str, spec: dict[str, Any], *, provider:
                     options: dict[str, Any] | None = None) -> tuple[tasks.Task, str]:
     options = options or {}
     ds_id = util.new_id("ds-")
+    audit.record("dataset.generate", dataset=ds_id, name=name, category=category, provider=provider, model=model)
     d = dataset_dir(ds_id)
     d.mkdir(parents=True, exist_ok=True)
     db.put("datasets", ds_id, {"id": ds_id, "name": name, "category": category, "source": "synthetic", "status": "generating",
@@ -234,5 +237,6 @@ def preview(ds_id: str, limit: int = 20) -> dict[str, Any]:
 
 
 def delete(ds_id: str) -> None:
+    audit.record("dataset.delete", dataset=ds_id)
     shutil.rmtree(dataset_dir(ds_id), ignore_errors=True)
     db.delete("datasets", ds_id)
