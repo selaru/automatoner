@@ -62,9 +62,3 @@ Automatoner is built to run on your own computer or on a server you control. Kno
 ## Dependencies
 
 Dependabot and CodeQL are enabled on this repository. Dependency and code scanning alerts are handled in the open, since they do not describe an unreported flaw.
-
-Before you commit it:
-
-- Private reporting: the "Report a vulnerability" button only appears once you turn on private vulnerability reporting. It's under Settings, then Code security.
-- Email: the address is the one from your commits. Replace it if you'd rather use a different one.
-- Response time: the 5-working-days acknowledgement is a commitment you'd be making. Change it if it's not realistic.
