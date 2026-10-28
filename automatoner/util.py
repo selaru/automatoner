@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 import secrets
 import time
 import uuid
@@ -9,6 +10,23 @@ from datetime import datetime, timezone
 
 def new_id(prefix: str = "") -> str:
     return f"{prefix}{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+
+
+class InvalidId(ValueError):
+    pass
+
+
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def safe_child(base: Path, name: str) -> Path:
+    """`base / name`, refusing anything that could point outside `base` (separators, `..`, absolute paths)."""
+    if not isinstance(name, str) or not _SAFE_NAME.match(name) or ".." in name:
+        raise InvalidId(f"invalid id: {name!r}")
+    child = (base / name).resolve()
+    if base.resolve() not in child.parents:
+        raise InvalidId(f"invalid id: {name!r}")
+    return child
 
 
 def slug(text: str) -> str:

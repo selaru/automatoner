@@ -25,7 +25,7 @@ class JobError(ValueError):
 
 
 def job_dir(job_id: str) -> Path:
-    return config.jobs_dir() / job_id
+    return util.safe_child(config.jobs_dir(), job_id)
 
 
 def defaults_for(plugin_id: str, category: str, entry: dict[str, Any]) -> dict[str, Any]:

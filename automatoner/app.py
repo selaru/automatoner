@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__
+from . import __version__, util
 from .api import routes
 from .training import runner
 
@@ -71,6 +72,10 @@ def create_app(allow_any_host: bool = False) -> FastAPI:
     # Dev server (Vite) runs on another port; production serves the built UI from this app.
     app.add_middleware(CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"])
     app.add_middleware(LocalOnly, allow_any_host=allow_any_host)
+    @app.exception_handler(util.InvalidId)
+    async def _invalid_id(_request, _exc):
+        return JSONResponse({"detail": "unknown id"}, status_code=404)
+
     app.include_router(routes.router)
     app.include_router(routes.ws_router)
     runner.mark_interrupted()
@@ -80,10 +85,11 @@ def create_app(allow_any_host: bool = False) -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
-            f = (DIST / path).resolve()
-            if path and DIST.resolve() in f.parents and f.is_file():
+            root = DIST.resolve()
+            f = os.path.realpath(os.path.join(root, path))
+            if path and f.startswith(str(root) + os.sep) and os.path.isfile(f):
                 return FileResponse(f)
-            return FileResponse(DIST / "index.html")
+            return FileResponse(root / "index.html")
     else:
         @app.get("/", include_in_schema=False)
         def index():

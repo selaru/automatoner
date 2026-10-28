@@ -19,7 +19,7 @@ from .synth import tabular as synth_tabular
 
 
 def dataset_dir(ds_id: str) -> Path:
-    return config.datasets_dir() / ds_id
+    return util.safe_child(config.datasets_dir(), ds_id)
 
 
 # --- core: rows or DataFrame -> validated, split dataset ------------------------------------------

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ from ..export import service as exports
 from .. import recipes as recipes_mod
 from ..store import db
 from ..training import plugins, runner
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api")
 
@@ -170,8 +173,11 @@ def test_provider(name: str, model: str | None = None) -> dict[str, Any]:
         p = providers.get_provider(name, model)
         reply = providers.ask(p, "Reply with the single word: ok", "ping", max_tokens=20, temperature=0, retries=1)
         return {"ok": True, "model": p.model, "reply": reply.strip()[:80]}
-    except Exception as e:  # noqa: BLE001
+    except providers.ProviderError as e:
         return {"ok": False, "error": str(e)}
+    except Exception:  # noqa: BLE001
+        log.exception("provider test failed")
+        return {"ok": False, "error": "the provider test failed unexpectedly; see the server log"}
 
 
 # --- tasks (downloads, generation, installs, exports) ---------------------------------------------

@@ -82,13 +82,13 @@ def download_path(export_id: str):
     name = (doc.get("result") or {}).get("download")
     if not name:
         return None
-    p = config.exports_dir() / name
-    return p if p.exists() else None
+    p = util.safe_child(config.exports_dir(), name)
+    return p if p.is_file() else None
 
 
 def delete(export_id: str) -> None:
-    shutil.rmtree(config.exports_dir() / export_id, ignore_errors=True)
-    z = config.exports_dir() / f"{export_id}.zip"
+    shutil.rmtree(util.safe_child(config.exports_dir(), export_id), ignore_errors=True)
+    z = util.safe_child(config.exports_dir(), f"{export_id}.zip")
     if z.exists():
         z.unlink()
     db.delete("exports", export_id)
