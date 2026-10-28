@@ -184,3 +184,15 @@ def test_low_memory_is_a_warning_not_a_failure(monkeypatch):
         total = 4 * 2**30
     monkeypatch.setattr(checks.psutil, "virtual_memory", lambda: Mem())
     assert checks.ram_check()["status"] == "warn"
+
+
+def test_unsafe_ids_are_refused(client):
+    from automatoner import util
+    from automatoner.training import runner
+    for bad in ("..", "../x", "a/b", "/etc", ".hidden", ""):
+        try:
+            util.safe_child(runner.config.jobs_dir(), bad)
+        except util.InvalidId:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+    assert client.get("/api/jobs/.hidden/report").status_code == 404

@@ -199,7 +199,7 @@ def hf_check() -> dict[str, Any]:
         who = HfApi().whoami(token=token)
         return _c("hf-token", "Hugging Face token", "ok", f"signed in as {who.get('name')}", group="accounts")
     except Exception as e:  # noqa: BLE001
-        return _c("hf-token", "Hugging Face token", "fail", f"token rejected or Hugging Face unreachable: {str(e)[:120]}", group="accounts")
+        return _c("hf-token", "Hugging Face token", "fail", f"token rejected or Hugging Face unreachable ({type(e).__name__})", group="accounts")
 
 
 def provider_checks() -> list[dict[str, Any]]:
