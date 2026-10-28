@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 import secrets
@@ -23,10 +24,11 @@ def safe_child(base: Path, name: str) -> Path:
     """`base / name`, refusing anything that could point outside `base` (separators, `..`, absolute paths)."""
     if not isinstance(name, str) or not _SAFE_NAME.match(name) or ".." in name:
         raise InvalidId(f"invalid id: {name!r}")
-    child = (base / name).resolve()
-    if base.resolve() not in child.parents:
+    root = os.path.realpath(base)
+    child = os.path.realpath(os.path.join(root, name))
+    if not child.startswith(root + os.sep):
         raise InvalidId(f"invalid id: {name!r}")
-    return child
+    return Path(child)
 
 
 def slug(text: str) -> str:
