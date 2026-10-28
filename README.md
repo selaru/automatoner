@@ -99,6 +99,39 @@ Keys are stored on this computer only, in the data folder, readable by your user
 
 ## Command line
 
+### Installing the command
+
+`automatoner` is a normal command line program. After the install above you can run it three ways. Pick one.
+
+**1. From the project folder, with uv (nothing extra to install).** Put `uv run` in front of it. Remember that `uv run` re-syncs the environment and can remove extras (see "Installing extras"), so ways 2 and 3 are safer once you have installed PyTorch or other extras:
+
+```
+cd automatoner
+uv run automatoner doctor
+```
+
+**2. Install it once, then run it from any folder.** This puts `automatoner` on your PATH:
+
+```
+uv tool install --editable ".[tabular,mcp]"     # run inside the cloned folder; list the extras you want
+uv tool update-shell                            # first time only, then open a new terminal
+automatoner doctor
+```
+
+To add an extra later, run the install again with the longer list and `--force`, for example `uv tool install --force --editable ".[tabular,text,mcp]"`. Remove it with `uv tool uninstall automatoner`. Your datasets, models and settings are stored in `~/.automatoner` (`%LOCALAPPDATA%\\automatoner` on Windows), so they are the same whichever way you run it.
+
+**3. Activate the virtual environment.** After `uv sync`, uv creates `.venv` in the project:
+
+```
+source .venv/bin/activate          # macOS and Linux
+.venv\Scripts\activate             # Windows
+automatoner doctor
+```
+
+Check that it works with `automatoner --help`. `atn` is a shorter name for the same command, so `atn doctor` and `atn train ...` do the same as the long form. The examples below leave out `uv run`; add it if you use way 1.
+
+### Using it
+
 Everything the web interface does is also a command, for scripts, CI and remote machines. Add `--json` to any list or show command for machine-readable output. Exit code 0 is success, 1 a failure, 2 a usage mistake.
 
 ```

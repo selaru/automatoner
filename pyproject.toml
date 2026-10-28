@@ -54,6 +54,7 @@ dev = ["pytest>=8", "pytest-timeout>=2.3"]
 
 [project.scripts]
 automatoner = "automatoner.__main__:main"
+atn = "automatoner.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
